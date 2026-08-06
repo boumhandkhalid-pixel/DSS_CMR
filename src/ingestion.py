@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 from typing import List
 
-from src.parsers.parser_factory import get_parser_for_sheet
+from src.parsers.parser_factory import SheetKind, detect_sheet_family, get_parser_for_sheet
 from src.normalization.normalizer import merge_long_tables
 
 
@@ -18,11 +18,19 @@ def ingest_workbook(path: str) -> pd.DataFrame:
     for sheet in xls.sheet_names:
         # load sheet quickly to let factory detect family
         df = pd.read_excel(pathp, sheet_name=sheet, nrows=20, header=None)
+        sheet_kind = detect_sheet_family(df)
         parser = get_parser_for_sheet(df)
         try:
-            parsed = parser(pathp, sheet)
-            long_tables.append(parsed)
-            print(f'Parsed sheet {sheet} -> {len(parsed)} rows')
+            if sheet_kind == SheetKind.MARKET_FAMILY_A and parser is not None:
+                parsed = parser(pathp, sheet)
+                long_tables.append(parsed)
+                print(f'Parsed Family A sheet {sheet} -> {len(parsed)} rows')
+            elif sheet_kind == SheetKind.MARKET_FAMILY_B:
+                print(f'Skipped Family B sheet {sheet} -> report and ignore')
+            elif sheet_kind == SheetKind.INDEX_COMPOSITION:
+                print(f'Skipped index-composition sheet {sheet} -> keep independent for dynamic filtering')
+            else:
+                print(f'Skipped unknown sheet {sheet} -> manual review')
         except Exception as e:
             print(f'Warning: failed to parse sheet {sheet}: {e}')
 

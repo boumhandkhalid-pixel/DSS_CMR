@@ -1,0 +1,52 @@
+:root {
+  --bvc-bg: #f6f8fb;
+  --bvc-surface: #ffffff;
+  --bvc-border: #d7dce5;
+  --bvc-text: #162033;
+  --bvc-muted: #5f6b7a;
+  --bvc-accent: #0f5ea8;
+  --bvc-success: #146c43;
+}
+
+html,
+body,
+[class*="css"] {
+  color: var(--bvc-text);
+}
+
+.stApp {
+  background: linear-gradient(180deg, #fbfcfe 0%, #f4f7fb 100%);
+}
+
+section[data-testid="stSidebar"] {
+  background: #f8fafc;
+  border-right: 1px solid var(--bvc-border);
+}
+
+.block-container {
+  padding-top: 1.5rem;
+  padding-bottom: 2rem;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--bvc-text);
+}
+
+[data-testid="stMetric"] {
+  background: var(--bvc-surface);
+  border: 1px solid var(--bvc-border);
+  border-radius: 0.8rem;
+  padding: 0.8rem 1rem;
+}
+
+[data-testid="stDataFrame"] {
+  border: 1px solid var(--bvc-border);
+  border-radius: 0.8rem;
+}
+
+.small-note {
+  color: var(--bvc-muted);
+  font-size: 0.9rem;
+}

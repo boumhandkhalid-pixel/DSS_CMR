@@ -13,3 +13,11 @@ This repository is organized for a notebook-first development workflow for the B
 1. Prototype each stage in a dedicated notebook.
 2. Validate the logic.
 3. Migrate the validated logic into reusable Python modules under src/.
+
+## Streamlit UI
+
+Launch the presentation layer with:
+
+```bash
+streamlit run ui/app.py
+```
