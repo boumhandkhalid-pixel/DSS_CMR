@@ -16,6 +16,8 @@ def parse_simple_sheet(path: str, sheet_name: str) -> pd.DataFrame:
 
     Returns a long DataFrame with columns: `Date`, `CODE_ISIN`, `Company`, `Variable`, `Value`.
     """
+    from src.parsers.parser_factory import normalize_sheet_name
+    
     raw = pd.read_excel(path, sheet_name=sheet_name, header=None)
 
     # detect CODE ISIN row
@@ -53,6 +55,9 @@ def parse_simple_sheet(path: str, sheet_name: str) -> pd.DataFrame:
             continue
         companies.append((col, str(code).strip() if pd.notna(code) else '', str(name).strip() if pd.notna(name) else ''))
 
+    # Normalize variable name using semantic patterns
+    canonical_variable = normalize_sheet_name(sheet_name)
+
     records = []
     for row_idx in range(data_start, len(raw)):
         date = raw.iat[row_idx, 0]
@@ -62,7 +67,7 @@ def parse_simple_sheet(path: str, sheet_name: str) -> pd.DataFrame:
                 'Date': pd.to_datetime(date, errors='coerce') if pd.notna(date) else pd.NaT,
                 'CODE_ISIN': code,
                 'Company': name or code,
-                'Variable': sheet_name,
+                'Variable': canonical_variable,  # Use normalized name
                 'Value': val,
             })
 

@@ -6,6 +6,7 @@ APP_SUBTITLE = "Market data, filtering, and recommendations"
 NAVIGATION_PAGES = [
     "Dashboard",
     "Market Data",
+    "Market Metrics",
     "Index Composition",
     "Analysis",
     "Recommendations",

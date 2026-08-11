@@ -4,102 +4,104 @@ from datetime import datetime, timezone
 from typing import Any
 
 import streamlit as st
+from ui.components.persistence import get_state_manager
 
 STATE_DEFAULTS: dict[str, Any] = {
-    "current_page": "Dashboard",
     "market_file_name": None,
     "market_imported": False,
-    "market_imported_at": None,
-    "market_summary": {
-        "accepted_sheets": 0,
-        "ignored_sheets": 0,
-        "companies": 0,
-        "sessions": 0,
-    },
     "index_file_name": None,
     "index_imported": False,
-    "index_imported_at": None,
-    "index_summary": {
-        "indices": 0,
-        "companies": 0,
-    },
-    "analysis_requested": False,
-    "analysis_completed": False,
-    "recommendations_ready": False,
-    "settings": {
-        "technical_indicators": [
-            "RSI14",
-            "SMA20",
-            "SMA50",
-            "EMA20",
-            "MACD",
-            "MACD Signal",
-            "MACD Histogram",
-            "RVOL",
-            "VWAP",
-            "Historical Volatility",
-        ],
-        "dynamic_filters": {},
-        "business_rules": {},
-    },
+    "pipeline_complete": False,
+    "analysis_in_progress": False,
+    "analysis_step": None,
+    "market_upload_temp_path": None,
+    "market_upload_name": None,
+    "market_preview_page": 0,
+    "comp_upload_temp_path": None,
+    "comp_upload_name": None,
+    "comp_preview_page": 0,
+    # Pas de résumé détaillé, juste l'essentiel
+    # Pas de paramètres complexes
+    # Pas de métriques détaillées
 }
 
 
 def init_session_state() -> None:
+    """Initialise l'état de session minimaliste."""
+    
+    # Charger l'état sauvegardé si disponible
+    state_manager = get_state_manager()
+    
+    # Restaurer depuis sauvegarde si disponible
+    if 'initialized' not in st.session_state:
+        saved_session = state_manager.load_session()
+        
+        if saved_session['has_saved_state']:
+            # Restaurer l'essentiel seulement
+            if saved_session['unified_data'] is not None:
+                st.session_state['unified_data'] = saved_session['unified_data']
+                st.session_state['market_imported'] = True
+            
+            if saved_session['composition_data'] is not None:
+                st.session_state['composition_data'] = saved_session['composition_data']
+                st.session_state['index_imported'] = True
+            
+            if saved_session['decisions_summary'] is not None:
+                st.session_state['decisions_summary'] = saved_session['decisions_summary']
+                st.session_state['pipeline_complete'] = True
+        
+        st.session_state['initialized'] = True
+    
+    # Initialiser les valeurs par défaut minimales
     for key, value in STATE_DEFAULTS.items():
         if key not in st.session_state:
             st.session_state[key] = value.copy() if isinstance(value, dict) else value
 
 
 def reset_session_state() -> None:
-    for key in list(STATE_DEFAULTS.keys()):
+    """Efface complètement la session (état + fichiers)."""
+    state_manager = get_state_manager()
+    state_manager.clear_session()
+    
+    for key in list(st.session_state.keys()):
         st.session_state.pop(key, None)
     init_session_state()
 
 
-def _utc_now_label() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+def save_session_state() -> None:
+    """Sauvegarde l'état actuel de la session sur disque."""
+    state_manager = get_state_manager()
+    
+    # Métadonnées minimales
+    metadata = {
+        'market_file_name': st.session_state.get('market_file_name', ''),
+        'index_file_name': st.session_state.get('index_file_name', ''),
+        'market_imported': st.session_state.get('market_imported', False),
+        'index_imported': st.session_state.get('index_imported', False),
+        'pipeline_complete': st.session_state.get('pipeline_complete', False),
+    }
+    
+    # Sauvegarder uniquement l'essentiel
+    state_manager.save_session(
+        unified_data=st.session_state.get('unified_data'),
+        composition_data=st.session_state.get('composition_data'),
+        decisions_summary=st.session_state.get('decisions_summary'),
+        metadata=metadata
+    )
 
 
 def mark_market_uploaded(file_name: str) -> None:
     st.session_state.market_file_name = file_name
     st.session_state.market_imported = True
-    st.session_state.market_imported_at = _utc_now_label()
+    save_session_state()
 
 
 def mark_index_uploaded(file_name: str) -> None:
     st.session_state.index_file_name = file_name
     st.session_state.index_imported = True
-    st.session_state.index_imported_at = _utc_now_label()
-
-
-def set_market_summary(*, accepted_sheets: int | None = None, ignored_sheets: int | None = None, companies: int | None = None, sessions: int | None = None) -> None:
-    summary = dict(st.session_state.market_summary)
-    if accepted_sheets is not None:
-        summary["accepted_sheets"] = accepted_sheets
-    if ignored_sheets is not None:
-        summary["ignored_sheets"] = ignored_sheets
-    if companies is not None:
-        summary["companies"] = companies
-    if sessions is not None:
-        summary["sessions"] = sessions
-    st.session_state.market_summary = summary
-
-
-def set_index_summary(*, indices: int | None = None, companies: int | None = None) -> None:
-    summary = dict(st.session_state.index_summary)
-    if indices is not None:
-        summary["indices"] = indices
-    if companies is not None:
-        summary["companies"] = companies
-    st.session_state.index_summary = summary
-
-
-def mark_analysis_requested() -> None:
-    st.session_state.analysis_requested = True
-    st.session_state.analysis_completed = False
+    save_session_state()
 
 
 def mark_analysis_completed() -> None:
-    st.session_state.analysis_completed = True
-    st.session_state.recommendations_ready = True
+    st.session_state.pipeline_complete = True
+    save_session_state()
