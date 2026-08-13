@@ -136,88 +136,44 @@ class DSS_Pipeline:
         index_name: Optional[str] = None
     ) -> Tuple[pd.DataFrame, dict]:
         """
-        Ingest index composition Excel file.
+        Ingest index composition Excel file (version robuste multi-feuilles).
         
         Args:
             excel_path: Path to composition Excel file
-            index_name: Index to filter (e.g., 'MASI'). If None, uses config.
+            index_name: Index to filter (e.g., 'MASI 20'). If None, uses config.
         
         Returns:
             (composition_df, parse_report)
         """
+        from src.parsers.composition_parser import parse_composition_file
+        
         if index_name is None:
             index_name = FILTER_CONFIG['index']
         
-        # Read composition file
-        df = pd.read_excel(excel_path)
+        print(f"\n[INFO] Import composition d'indice : '{index_name}'")
+        print("=" * 70)
         
-        # Validate required columns
-        REQUIRED_COMPOSITION_COLUMNS = {"Indice", "Code ISIN", "Facteur flottant", "Capitalisation flottante", "Poids"}
-        missing = REQUIRED_COMPOSITION_COLUMNS - set(df.columns)
-        if missing:
-            raise ValueError(
-                f"❌ Fichier invalide : colonnes manquantes {missing}.\n"
-                f"Ce fichier ne semble pas être un fichier de composition d'indice.\n"
-                f"Colonnes trouvées : {list(df.columns)}"
-            )
+        # Utiliser le parser robuste multi-feuilles
+        df, report = parse_composition_file(
+            excel_path,
+            index_name=index_name,
+            validate=True
+        )
         
-        if df.empty:
-            raise ValueError("❌ Le fichier importé ne contient aucune ligne de données.")
-        
-        # Log indices disponibles pour diagnostic
-        if 'Indice' in df.columns:
-            available_indices = df['Indice'].unique()
-            print(f"[INFO] Indices disponibles dans le fichier : {available_indices}")
-            print(f"[INFO] Indice cible configuré : '{index_name}'")
-        
-        # Filter to selected index (avec normalisation robuste)
-        if 'Indice' in df.columns:
-            def normalize_index_name(name: str) -> str:
-                """Normalise les noms d'indices pour comparaison robuste."""
-                return str(name).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
-            
-            df_filtered = df[
-                df['Indice'].apply(normalize_index_name) == normalize_index_name(index_name)
-            ].copy()
-            
-            # Validation critique : vérifier que le filtre a produit des résultats
-            if df_filtered.empty:
-                available_normalized = [f"'{idx}' (normalisé: {normalize_index_name(idx)})" 
-                                       for idx in available_indices]
-                raise ValueError(
-                    f"❌ Aucun titre trouvé pour l'indice '{index_name}'.\n\n"
-                    f"Indice configuré (normalisé) : {normalize_index_name(index_name)}\n"
-                    f"Indices disponibles dans le fichier :\n" + 
-                    "\n".join(f"  - {idx}" for idx in available_normalized) +
-                    f"\n\nVérifiez que le nom de l'indice dans config/methodology.py "
-                    f"correspond bien à une valeur présente dans la colonne 'Indice' du fichier."
-                )
-            
-            df = df_filtered
-            print(f"[INFO] ✓ Filtre appliqué : {len(df)} titres pour l'indice '{index_name}'")
-        
-        # Rename columns to canonical names
-        column_mapping = {
-            'Valeur': 'Company',
-            'Code ISIN': 'CODE_ISIN',
-            'Facteur flottant': 'FF',
-            'Capitalisation flottante': 'FF_MarketCap',
-            'Poids': 'Weight',
-            'Facteur de plafonnement': 'Capping_Factor',
-            'Nb Titres': 'Nb_Titres',
-        }
-        df.rename(columns=column_mapping, inplace=True)
-        
+        print("=" * 70)
         print(f"[INFO] ✓ Composition chargée : {len(df)} titres pour l'indice '{index_name}'")
-        print(f"[INFO] ✓ Colonnes disponibles : {list(df.columns)}")
+        print(f"[INFO] ✓ Colonnes disponibles : {list(df.columns)}\n")
         
-        report = {
+        # Rapport pour UI
+        ui_report = {
             'index': index_name,
             'total_securities': len(df),
             'columns': list(df.columns),
+            'indices_available': report.get('indices_found', []),
+            'sheets_processed': report.get('sheets_processed', []),
         }
         
-        self.reports['composition'] = report
+        self.reports['composition'] = ui_report
         
         # Convert object columns to string to avoid Parquet datetime errors
         for col in df.select_dtypes(include=['object']).columns:
@@ -227,7 +183,7 @@ class DSS_Pipeline:
         out_path = str(self.data_dir / 'index_composition.parquet')
         df.to_parquet(out_path, compression='snappy', index=False)
         
-        return df, report
+        return df, ui_report
     
     def apply_quality_filter(self, unified_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
         """
