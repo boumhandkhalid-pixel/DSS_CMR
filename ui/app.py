@@ -630,7 +630,14 @@ def import_composition_data(uploaded_file):
             
             # Message simple pour le gestionnaire
             st.error("❌ **Format de fichier inattendu**")
-            st.warning("⚠️ Veuillez vérifier que le fichier de **composition d'indice** contient les colonnes attendues (Index, CODE_ISIN, Poids, etc.)")
+            st.warning("⚠️ Veuillez vérifier que le fichier de **composition d'indice** contient les colonnes attendues :")
+            st.markdown("""
+            - **Indice** (nom de l'indice : MASI, MASI 20, etc.)
+            - **Code ISIN** (identifiant unique des titres)
+            - **Facteur flottant** (free float)
+            - **Capitalisation flottante** (en MAD)
+            - **Poids** (pondération dans l'indice)
+            """)
             st.info(f"🆔 Référence incident : `{incident_id}`")
 
 

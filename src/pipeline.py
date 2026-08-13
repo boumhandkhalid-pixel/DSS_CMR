@@ -151,9 +151,50 @@ class DSS_Pipeline:
         # Read composition file
         df = pd.read_excel(excel_path)
         
-        # Filter to selected index
+        # Validate required columns
+        REQUIRED_COMPOSITION_COLUMNS = {"Indice", "Code ISIN", "Facteur flottant", "Capitalisation flottante", "Poids"}
+        missing = REQUIRED_COMPOSITION_COLUMNS - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"❌ Fichier invalide : colonnes manquantes {missing}.\n"
+                f"Ce fichier ne semble pas être un fichier de composition d'indice.\n"
+                f"Colonnes trouvées : {list(df.columns)}"
+            )
+        
+        if df.empty:
+            raise ValueError("❌ Le fichier importé ne contient aucune ligne de données.")
+        
+        # Log indices disponibles pour diagnostic
         if 'Indice' in df.columns:
-            df = df[df['Indice'] == index_name].copy()
+            available_indices = df['Indice'].unique()
+            print(f"[INFO] Indices disponibles dans le fichier : {available_indices}")
+            print(f"[INFO] Indice cible configuré : '{index_name}'")
+        
+        # Filter to selected index (avec normalisation robuste)
+        if 'Indice' in df.columns:
+            def normalize_index_name(name: str) -> str:
+                """Normalise les noms d'indices pour comparaison robuste."""
+                return str(name).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+            
+            df_filtered = df[
+                df['Indice'].apply(normalize_index_name) == normalize_index_name(index_name)
+            ].copy()
+            
+            # Validation critique : vérifier que le filtre a produit des résultats
+            if df_filtered.empty:
+                available_normalized = [f"'{idx}' (normalisé: {normalize_index_name(idx)})" 
+                                       for idx in available_indices]
+                raise ValueError(
+                    f"❌ Aucun titre trouvé pour l'indice '{index_name}'.\n\n"
+                    f"Indice configuré (normalisé) : {normalize_index_name(index_name)}\n"
+                    f"Indices disponibles dans le fichier :\n" + 
+                    "\n".join(f"  - {idx}" for idx in available_normalized) +
+                    f"\n\nVérifiez que le nom de l'indice dans config/methodology.py "
+                    f"correspond bien à une valeur présente dans la colonne 'Indice' du fichier."
+                )
+            
+            df = df_filtered
+            print(f"[INFO] ✓ Filtre appliqué : {len(df)} titres pour l'indice '{index_name}'")
         
         # Rename columns to canonical names
         column_mapping = {
@@ -166,6 +207,9 @@ class DSS_Pipeline:
             'Nb Titres': 'Nb_Titres',
         }
         df.rename(columns=column_mapping, inplace=True)
+        
+        print(f"[INFO] ✓ Composition chargée : {len(df)} titres pour l'indice '{index_name}'")
+        print(f"[INFO] ✓ Colonnes disponibles : {list(df.columns)}")
         
         report = {
             'index': index_name,
@@ -224,6 +268,12 @@ class DSS_Pipeline:
         Returns:
             (investable_df, filter_report)
         """
+
+        print(f"[DEBUG] composition_df shape: {composition_df.shape}")
+        print(f"[DEBUG] composition_df columns: {list(composition_df.columns)}")
+        if 'Indice' in composition_df.columns:
+            print(f"[DEBUG] Valeurs uniques Indice: {composition_df['Indice'].unique()}")
+
         # Compute dynamic thresholds from composition
         thresholds = compute_filter_thresholds(composition_df)
         

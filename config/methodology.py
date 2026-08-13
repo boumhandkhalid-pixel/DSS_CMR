@@ -48,7 +48,7 @@ FILTER_CONFIG = {
     # Gate 1 : univers d'indice — les titres doivent appartenir à cet indice.
     # Configurable : remplacer "MASI" par "MASI 20", "MASI ESG", etc.
     # Le gestionnaire de portefeuille peut modifier ceci dans l'UI sans toucher au code.
-    "index": "MASI",
+    "index": "MASI 20",
 
     # Gate 2 : Facteur de Flottant (Free Float) — valeur minimale absolue.
     # 0.20 correspond au seuil naturel inférieur dans les données BVC.
@@ -56,7 +56,7 @@ FILTER_CONFIG = {
     # tout ordre modeste fait bouger le prix (flottant faible = illiquide en pratique).
     # C'est un seuil absolu, pas basé sur percentile, car
     # 0.20 a une signification financière claire indépendante de la distribution.
-    "min_free_float_factor": 0.20,
+    "min_free_float_factor": 0.10,
 
     # Gate 3 : Capitalisation Flottante (Free Float Market Cap) — exprimée en PERCENTILE.
     # À l'exécution, compute_filter_thresholds() convertit cela en valeur
@@ -108,7 +108,22 @@ def compute_filter_thresholds(composition_df):
         → p25(FF_MarketCap) pourrait être 230 M MAD au lieu de 218 M MAD
         → Le filtre s'adapte automatiquement — aucun changement de code nécessaire
     """
+    # Validation 1: DataFrame vide
+    if composition_df.empty:
+        raise ValueError(
+            "❌ Le fichier de composition ne contient aucune ligne pour l'indice sélectionné.\n"
+            "Vérifiez que le nom de l'indice choisi correspond bien à une valeur présente "
+            "dans la colonne 'Indice' du fichier importé."
+        )
+    
+    # Validation 2: Colonne FF_MarketCap vide
     idx = composition_df["FF_MarketCap"].dropna()
+    
+    if idx.empty:
+        raise ValueError(
+            "❌ La colonne 'FF_MarketCap' est vide ou entièrement manquante dans le fichier "
+            "de composition importé. Vérifiez le format du fichier."
+        )
 
     p_ffmc = FILTER_CONFIG["min_ff_market_cap_percentile"]
 
