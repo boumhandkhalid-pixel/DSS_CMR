@@ -178,11 +178,11 @@ def render_import_section():
             comp_data = st.session_state.get('composition_data')
             if comp_data is not None:
                 n_securities = len(comp_data)
-                indices = comp_data['Index'].nunique() if 'Index' in comp_data.columns else 'N/A'
+                indices = comp_data['Indice'].nunique() if 'Indice' in comp_data.columns else 'N/A'
                 st.success(f"✓ {filename}")
                 st.caption(f"📋 {n_securities} titres · {indices} indices")
     
-    # Statut global
+    # Statut global + Sélection critères si composition importée
     market_ok = st.session_state.get('market_imported', False)
     comp_ok = st.session_state.get('index_imported', False)
     
@@ -206,6 +206,155 @@ def render_import_section():
             if st.button("🔄 Réinitialiser", use_container_width=True, type="secondary"):
                 reset_session_state()
                 st.rerun()
+    
+    # Section de sélection des critères (si composition importée)
+    if comp_ok:
+        render_filter_criteria_section()
+
+
+
+
+def render_filter_criteria_section():
+    """
+    Section 1.5: Sélection des Critères de Filtrage Dynamique
+    Le gestionnaire choisit l'indice cible et les seuils sans toucher au code.
+    """
+    st.divider()
+    st.subheader("⚙️ Configurer les Critères de Filtrage")
+    
+    # Récupérer les données de composition pour extraire les indices disponibles
+    comp_data = st.session_state.get('composition_data_full')  # On garde TOUTES les données
+    
+    if comp_data is None or comp_data.empty:
+        st.info("📋 Importez d'abord un fichier de composition pour configurer les critères.")
+        return
+    
+    # Extraire les indices disponibles
+    if 'Indice' in comp_data.columns:
+        available_indices = sorted(comp_data['Indice'].unique().tolist())
+    else:
+        st.error("❌ Colonne 'Indice' introuvable dans les données de composition.")
+        return
+    
+    st.markdown("""
+    Configurez les critères de filtrage pour l'univers investissable. 
+    Les recommandations seront générées selon ces critères.
+    """)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    # Critère 1 : Indice cible
+    with col1:
+        st.markdown("**🎯 Indice Cible**")
+        
+        # Valeur par défaut depuis config ou session
+        default_index = st.session_state.get('selected_index', 'MASI 20')
+        if default_index not in available_indices and len(available_indices) > 0:
+            default_index = available_indices[0]
+        
+        selected_index = st.selectbox(
+            "Choisir l'indice à analyser",
+            options=available_indices,
+            index=available_indices.index(default_index) if default_index in available_indices else 0,
+            key="filter_index_select",
+            help="Seuls les titres appartenant à cet indice seront analysés"
+        )
+        
+        # Afficher statistiques de l'indice sélectionné
+        if selected_index:
+            n_titles_in_index = len(comp_data[comp_data['Indice'] == selected_index])
+            st.caption(f"📊 {n_titles_in_index} titres dans {selected_index}")
+    
+    # Critère 2 : Free Float minimum
+    with col2:
+        st.markdown("**📈 Free Float Minimum**")
+        
+        default_ff = st.session_state.get('selected_ff_min', 0.10)
+        
+        selected_ff = st.slider(
+            "Facteur de flottant minimum",
+            min_value=0.0,
+            max_value=0.50,
+            value=float(default_ff),
+            step=0.05,
+            format="%.2f",
+            key="filter_ff_select",
+            help="Minimum 10% recommandé pour la liquidité"
+        )
+        
+        st.caption(f"Seuil: {selected_ff*100:.0f}% du capital flottant")
+    
+    # Critère 3 : Capitalisation flottante (percentile)
+    with col3:
+        st.markdown("**💰 Capitalisation Flottante**")
+        
+        default_percentile = st.session_state.get('selected_ffmc_percentile', 25)
+        
+        percentile_options = {
+            "p10 (Très inclusif)": 10,
+            "p25 (Modéré)": 25,
+            "p50 (Strict)": 50,
+            "p75 (Très strict)": 75
+        }
+        
+        percentile_labels = list(percentile_options.keys())
+        percentile_values = list(percentile_options.values())
+        
+        # Trouver l'index par défaut
+        try:
+            default_idx = percentile_values.index(default_percentile)
+        except ValueError:
+            default_idx = 1  # p25 par défaut
+        
+        selected_percentile_label = st.selectbox(
+            "Seuil de capitalisation",
+            options=percentile_labels,
+            index=default_idx,
+            key="filter_percentile_select",
+            help="Percentile de la capitalisation flottante (MAD)"
+        )
+        
+        selected_percentile = percentile_options[selected_percentile_label]
+        
+        # Calculer la valeur MAD correspondante pour information
+        if 'FF_MarketCap' in comp_data.columns and selected_index:
+            index_data = comp_data[comp_data['Indice'] == selected_index]
+            if not index_data.empty:
+                ffmc_value = index_data['FF_MarketCap'].quantile(selected_percentile / 100)
+                st.caption(f"≈ {ffmc_value/1e6:.1f} M MAD (p{selected_percentile})")
+    
+    st.divider()
+    
+    # Bouton d'application des critères
+    col1, col2, col3 = st.columns([2, 1, 2])
+    
+    with col2:
+        if st.button("✅ Appliquer les Critères", use_container_width=True, type="primary"):
+            # Sauvegarder les critères sélectionnés dans session_state
+            st.session_state['selected_index'] = selected_index
+            st.session_state['selected_ff_min'] = selected_ff
+            st.session_state['selected_ffmc_percentile'] = selected_percentile
+            st.session_state['criteria_applied'] = True
+            
+            # Filtrer les données de composition selon l'indice sélectionné
+            from src.parsers.composition_parser import normalize_index_name
+            filtered_comp = comp_data[
+                comp_data['Indice'].apply(normalize_index_name) == normalize_index_name(selected_index)
+            ].copy()
+            
+            st.session_state['composition_data'] = filtered_comp
+            
+            st.success(f"✅ Critères appliqués : {selected_index}, FF ≥ {selected_ff*100:.0f}%, Cap ≥ p{selected_percentile}")
+            st.rerun()
+    
+    # Afficher les critères actuels si appliqués
+    if st.session_state.get('criteria_applied', False):
+        st.info(f"""
+        **📋 Critères Actifs :**  
+        • Indice : **{st.session_state.get('selected_index', 'N/A')}**  
+        • Free Float : **≥ {st.session_state.get('selected_ff_min', 0)*100:.0f}%**  
+        • Capitalisation : **≥ p{st.session_state.get('selected_ffmc_percentile', 25)}**
+        """)
 
 
 def render_analysis_section():
@@ -580,7 +729,7 @@ def import_market_data(uploaded_file):
 
 
 def import_composition_data(uploaded_file):
-    """Import de la composition des indices."""
+    """Import de la composition des indices (version full - sans filtrage préalable)."""
     with st.spinner("⏳ Import de la composition des indices en cours..."):
         try:
             # Fichier temporaire
@@ -589,15 +738,33 @@ def import_composition_data(uploaded_file):
                 tmp.write(uploaded_file.getvalue())
                 temp_path = tmp.name
             
-            # Pipeline
+            # Pipeline - charger TOUS les indices (pas de filtrage)
             pipeline = st.session_state['pipeline']
-            comp_df, report = pipeline.ingest_index_composition(temp_path)
+            from src.parsers.composition_parser import parse_composition_file
             
-            # Stockage
-            st.session_state['composition_data'] = comp_df
+            comp_df_full, report = parse_composition_file(
+                temp_path,
+                index_name=None,  # Charger TOUS les indices
+                validate=True
+            )
+            
+            # Stockage - garder TOUTES les données
+            st.session_state['composition_data_full'] = comp_df_full  # NOUVEAU : toutes les données
             st.session_state['composition_report'] = report
             st.session_state['index_imported'] = True
             st.session_state['index_file_name'] = uploaded_file.name
+            
+            # Par défaut, sélectionner MASI 20 si disponible
+            available_indices = comp_df_full['Indice'].unique().tolist() if 'Indice' in comp_df_full.columns else []
+            default_index = 'MASI 20' if 'MASI 20' in available_indices else (available_indices[0] if available_indices else None)
+            
+            if default_index:
+                from src.parsers.composition_parser import normalize_index_name
+                comp_df_filtered = comp_df_full[
+                    comp_df_full['Indice'].apply(normalize_index_name) == normalize_index_name(default_index)
+                ].copy()
+                st.session_state['composition_data'] = comp_df_filtered
+                st.session_state['selected_index'] = default_index
             
             # Sauvegarde
             save_session_state()
@@ -606,20 +773,25 @@ def import_composition_data(uploaded_file):
             Path(temp_path).unlink(missing_ok=True)
             
             # Message de succès avec détails
-            n_indices = comp_df['Index'].nunique() if 'Index' in comp_df.columns else 'N/A'
-            n_securities = len(comp_df)
+            n_indices = len(available_indices)
+            n_securities = len(comp_df_full)
             
             st.success(f"✅ Composition importée : **{n_securities} titres**, **{n_indices} indices**")
             
             # Diagnostic: Afficher détails
             with st.expander("📊 Aperçu de la composition"):
-                st.write(f"**Colonnes disponibles :** {', '.join(comp_df.columns.tolist())}")
-                if 'Index' in comp_df.columns:
-                    indices = comp_df['Index'].value_counts()
-                    st.write("**Répartition par indice :**")
-                    for idx, count in indices.items():
-                        st.write(f"  - {idx}: {count} titres")
-                st.dataframe(comp_df.head(10), use_container_width=True)
+                st.write(f"**Indices disponibles :** {', '.join(available_indices)}")
+                st.write(f"**Colonnes disponibles :** {', '.join(comp_df_full.columns.tolist())}")
+                
+                if len(available_indices) > 0:
+                    st.write("\n**Répartition par indice :**")
+                    for idx in available_indices:
+                        count = (comp_df_full['Indice'] == idx).sum()
+                        st.write(f"  • {idx}: {count} titres")
+                
+                st.dataframe(comp_df_full.head(10), use_container_width=True)
+            
+            st.info(f"💡 **Prochaine étape** : Configurez les critères de filtrage ci-dessous avant de lancer l'analyse.")
             
             st.rerun()
             
@@ -642,17 +814,25 @@ def import_composition_data(uploaded_file):
 
 
 def run_analysis():
-    """Exécution du pipeline d'analyse complet."""
+    """Exécution du pipeline d'analyse complet avec critères dynamiques de l'UI."""
     st.session_state['analysis_in_progress'] = True
     st.session_state['analysis_step'] = 0
     
     try:
         pipeline = st.session_state['pipeline']
         market_df = st.session_state['unified_data']
-        comp_df = st.session_state['composition_data']
+        comp_df = st.session_state['composition_data']  # Déjà filtré sur l'indice sélectionné
+        
+        # Récupérer les critères sélectionnés dans l'UI (override de methodology.py)
+        selected_index = st.session_state.get('selected_index', 'MASI 20')
+        selected_ff_min = st.session_state.get('selected_ff_min', 0.10)
+        selected_percentile = st.session_state.get('selected_ffmc_percentile', 25)
         
         # Progress bar
         progress = st.progress(0, text="Initialisation...")
+        
+        # Afficher les critères utilisés
+        progress.progress(5, text=f"📋 Critères: {selected_index}, FF≥{selected_ff_min*100:.0f}%, p{selected_percentile}")
         
         # Étape 1: Normalisation (déjà faite à l'import)
         st.session_state['analysis_step'] = 1
@@ -689,10 +869,18 @@ def run_analysis():
         progress.progress(40, text="⏳ Calcul des métriques de marché...")
         # Les métriques sont calculées dans apply_dynamic_filter
         
-        # Étape 4: Filtrage dynamique
+        # Étape 4: Filtrage dynamique (avec critères UI)
         st.session_state['analysis_step'] = 4
-        progress.progress(50, text="⏳ Filtrage dynamique de l'univers investissable...")
-        investable, filter_report = pipeline.apply_dynamic_filter(unified_clean, comp_df)
+        progress.progress(50, text=f"⏳ Filtrage dynamique ({selected_index}, FF≥{selected_ff_min*100:.0f}%)...")
+        
+        # Passer les critères UI au pipeline (override de methodology.py)
+        investable, filter_report = pipeline.apply_dynamic_filter(
+            unified_clean, 
+            comp_df,
+            override_ff_min=selected_ff_min,
+            override_percentile=selected_percentile
+        )
+        
         n_investable = len(investable['Company'].unique()) if len(investable) > 0 else 0
         progress.progress(60, text=f"✓ Filtrage dynamique terminé ({n_investable} titres investissables)")
         
@@ -700,12 +888,14 @@ def run_analysis():
         if len(investable) == 0:
             raise ValueError(
                 f"❌ Aucun titre n'a passé le filtrage dynamique.\n\n"
+                f"Critères appliqués:\n"
+                f"- Indice: {selected_index}\n"
+                f"- Free Float ≥ {selected_ff_min*100:.0f}%\n"
+                f"- Capitalisation ≥ p{selected_percentile}\n\n"
                 f"Raisons possibles:\n"
-                f"- Free Float < 20% pour tous les titres\n"
-                f"- Aucun titre dans les indices de référence (MASI recommandé)\n"
-                f"- Données de marché insuffisantes (MIN_CONSECUTIVE={quality_report.get('min_consecutive', 14)})\n\n"
-                f"Sociétés après qualité: {n_after_quality}\n"
-                f"Vérifiez les fichiers Excel importés."
+                f"- Critères trop stricts pour cet indice\n"
+                f"- Données de marché insuffisantes\n\n"
+                f"Solutions: Ajuster les critères et relancer l'analyse."
             )
         
         # Étape 5: Indicateurs techniques
@@ -726,12 +916,17 @@ def run_analysis():
         decisions, summary, _ = pipeline.make_decisions(signals)
         progress.progress(100, text="✅ Analyse terminée")
         
-        # Stockage des résultats
+        # Stockage des résultats + critères utilisés
         st.session_state['decisions_summary'] = summary
         st.session_state['pipeline_results'] = {
             'decisions': decisions,
             'signals': signals,
             'indicators': indicators
+        }
+        st.session_state['analysis_criteria'] = {
+            'index': selected_index,
+            'ff_min': selected_ff_min,
+            'percentile': selected_percentile
         }
         st.session_state['pipeline_complete'] = True
         st.session_state['analysis_in_progress'] = False
@@ -744,7 +939,7 @@ def run_analysis():
         hold = (summary['Decision'] == 'HOLD').sum()
         sell = (summary['Decision'] == 'SELL').sum()
         
-        st.success(f"✅ **Analyse terminée** : {len(summary)} titres analysés - {buy} BUY, {hold} HOLD, {sell} SELL")
+        st.success(f"✅ **Analyse terminée** ({selected_index}) : {len(summary)} titres - {buy} BUY, {hold} HOLD, {sell} SELL")
         st.balloons()
         st.rerun()
         
@@ -759,7 +954,7 @@ def run_analysis():
         st.markdown("""
         - Les **données marché** sont complètes (Date, CODE_ISIN, Cours, Volume)
         - La **composition d'indice** correspond aux titres du marché
-        - La période couverte est suffisante (minimum 50 observations consécutives requises)
+        - Les **critères de filtrage** ne sont pas trop restrictifs
         """)
         st.info(f"🆔 Référence incident : `{incident_id}`")
         

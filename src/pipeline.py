@@ -212,7 +212,9 @@ class DSS_Pipeline:
     def apply_dynamic_filter(
         self,
         unified_df: pd.DataFrame,
-        composition_df: pd.DataFrame
+        composition_df: pd.DataFrame,
+        override_ff_min: Optional[float] = None,
+        override_percentile: Optional[int] = None
     ) -> Tuple[pd.DataFrame, dict]:
         """
         Apply dynamic investability filter based on composition.
@@ -220,6 +222,8 @@ class DSS_Pipeline:
         Args:
             unified_df: Quality-filtered market data
             composition_df: Index composition data
+            override_ff_min: Override min_free_float_factor from UI (optional)
+            override_percentile: Override min_ff_market_cap_percentile from UI (optional)
         
         Returns:
             (investable_df, filter_report)
@@ -233,12 +237,30 @@ class DSS_Pipeline:
         # Compute dynamic thresholds from composition
         thresholds = compute_filter_thresholds(composition_df)
         
+        # Override avec critères UI si fournis
+        if override_ff_min is not None:
+            min_ff = override_ff_min
+            print(f"[INFO] ✓ Free Float minimum (UI override): {min_ff*100:.0f}%")
+        else:
+            min_ff = FILTER_CONFIG['min_free_float_factor']
+        
+        if override_percentile is not None:
+            # Recalculer le seuil FF_MarketCap avec le nouveau percentile
+            idx = composition_df["FF_MarketCap"].dropna()
+            min_ffmc = float(np.percentile(idx, override_percentile))
+            print(f"[INFO] ✓ FF MarketCap minimum (UI override): {min_ffmc:,.0f} MAD (p{override_percentile})")
+        else:
+            min_ffmc = thresholds['min_ff_market_cap']
+        
         # Apply filters
         filtered = unified_df.copy()
         
         # Gate 1: Must belong to the index
         index_isins = set(composition_df['CODE_ISIN'].unique())
+        before_gate1 = len(filtered)
         filtered = filtered[filtered['CODE_ISIN'].isin(index_isins)].copy()
+        after_gate1 = len(filtered)
+        print(f"[INFO] Gate 1 (Indice) : {before_gate1} → {after_gate1} titres ({before_gate1 - after_gate1} exclus)")
         
         # Merge composition data
         comp_cols = ['CODE_ISIN', 'FF', 'FF_MarketCap', 'Weight']
@@ -249,12 +271,16 @@ class DSS_Pipeline:
         )
         
         # Gate 2: Free Float Factor >= threshold
-        min_ff = FILTER_CONFIG['min_free_float_factor']
+        before_gate2 = len(filtered)
         filtered = filtered[filtered['FF'] >= min_ff].copy()
+        after_gate2 = len(filtered)
+        print(f"[INFO] Gate 2 (FF >= {min_ff*100:.0f}%) : {before_gate2} → {after_gate2} titres ({before_gate2 - after_gate2} exclus)")
         
         # Gate 3: FF Market Cap >= dynamic threshold
-        min_ffmc = thresholds['min_ff_market_cap']
+        before_gate3 = len(filtered)
         filtered = filtered[filtered['FF_MarketCap'] >= min_ffmc].copy()
+        after_gate3 = len(filtered)
+        print(f"[INFO] Gate 3 (Cap >= {min_ffmc:,.0f}) : {before_gate3} → {after_gate3} titres ({before_gate3 - after_gate3} exclus)")
         
         report = {
             'input_rows': len(unified_df),
@@ -262,6 +288,9 @@ class DSS_Pipeline:
             'input_companies': unified_df['CODE_ISIN'].nunique(),
             'output_companies': filtered['CODE_ISIN'].nunique(),
             'thresholds': thresholds,
+            'applied_ff_min': min_ff,
+            'applied_ffmc_min': min_ffmc,
+            'applied_percentile': override_percentile if override_percentile else FILTER_CONFIG['min_ff_market_cap_percentile'],
         }
         
         self.reports['dynamic_filter'] = report
