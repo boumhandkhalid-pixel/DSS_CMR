@@ -20,6 +20,7 @@ STATE_DEFAULTS: dict[str, Any] = {
     "comp_upload_temp_path": None,
     "comp_upload_name": None,
     "comp_preview_page": 0,
+    "reset_counter": 0,  # Compteur pour forcer le reset des uploaders
     # Pas de résumé détaillé, juste l'essentiel
     # Pas de paramètres complexes
     # Pas de métriques détaillées
@@ -63,9 +64,16 @@ def reset_session_state() -> None:
     state_manager = get_state_manager()
     state_manager.clear_session()
     
+    # Incrémenter le compteur de reset pour forcer le re-render des uploaders
+    current_counter = st.session_state.get('reset_counter', 0)
+    
     for key in list(st.session_state.keys()):
         st.session_state.pop(key, None)
+    
     init_session_state()
+    
+    # Incrémenter le compteur pour changer les keys des widgets
+    st.session_state['reset_counter'] = current_counter + 1
 
 
 def save_session_state() -> None:

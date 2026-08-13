@@ -1,0 +1,1366 @@
+\documentclass{rapportENSIAS} % Remplacer par 'report' si cette classe n'existe pas
+% Preamble
+\usepackage{float}
+\usepackage{tabto} % For \tabto command
+\usepackage[T1]{fontenc}
+\usepackage{lmodern} % Police moderne
+%\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage[french]{babel}
+\usepackage{array} % Required for advanced table formatting
+\usepackage{booktabs} % For professional-looking tables
+\usepackage{graphicx}
+\usepackage{minted}        % Pour les blocs de code
+\usepackage{color}         % Couleurs pour minted
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{hyperref}
+\usepackage{amsmath, amssymb}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds, calc}
+\usepackage{pdfpages}
+\definecolor{bg}{rgb}{0.95,0.95,0.95}
+\usepackage{dirtree}
+%\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\definecolor{foldercolor}{RGB}{100,100,150}
+\usepackage[acronym,nonumberlist]{glossaries} % Pour la liste des acronymes
+\makeglossaries
+%--------------------------comfiguration d'afichage de code java
+% Couleurs personnalisées pour un style éditeur clair
+\definecolor{editorbg}{rgb}{0.98, 0.98, 0.98} % fond très clair
+\definecolor{keywordcolor}{rgb}{0.2, 0.2, 0.7}
+\definecolor{stringcolor}{rgb}{0.0, 0.5, 0.0}
+\definecolor{commentcolor}{rgb}{0.5, 0.5, 0.5}
+\definecolor{numbercolor}{rgb}{0.8, 0.2, 0.2}
+
+% Style syntaxique optionnel via \usemintedstyle
+\usemintedstyle{friendly} % Style clair et moderne
+
+% ================= LISTE DES ACRONYMES =================
+\newacronym{bvc}{BVC}{Bourse des Valeurs de Casablanca}
+\newacronym{cmr}{CMR}{Caisse Marocaine des Retraites}
+\newacronym{ammc}{AMMC}{Autorité Marocaine du Marché des Capitaux}
+\newacronym{sdb}{SDB}{Société de Bourse}
+\newacronym{opcvm}{OPCVM}{Organisme de Placement Collectif en Valeurs Mobilières}
+\newacronym{masi}{MASI}{Moroccan All Shares Index}
+\newacronym{pet}{PET}{Prix d'Équilibre Théorique}
+\newacronym{cto}{CTO}{Cours Théorique d'Ouverture}
+\newacronym{ttb}{TTB}{Taxe sur les Transactions Boursières}
+\newacronym{rsi}{RSI}{Relative Strength Index}
+\newacronym{atr}{ATR}{Average True Range}
+\newacronym{mdd}{MDD}{Maximum Drawdown}
+\newacronym{cb}{CB}{Circuit-Breaker (coupe-circuit)}
+\newacronym{sma}{SMA}{Simple Moving Average (moyenne mobile simple)}
+\newacronym{ema}{EMA}{Exponential Moving Average (moyenne mobile exponentielle)}
+\newacronym{macd}{MACD}{Moving Average Convergence Divergence}
+\newacronym{mfi}{MFI}{Money Flow Index}
+\newacronym{adl}{A/D Line}{Advance/Decline Line}
+
+%------------
+\title{Conception d'un Système d'Aide à la Décision pour le Trading Opérationnel à la Bourse des Valeurs de Casablanca}
+\begin{document}
+
+\titre{Conception d'un Système d'Aide à la Décision pour le Trading Opérationnel à la BVC}
+\sujet{Stage D'Ingénieur Adjoint}
+\enseignant{Jad \textsc{OUALAALOU}}
+\eleves{Yassine \textsc{BOUMHAND}}
+
+\fairemarges
+\fairepagedegarde
+
+\newpage
+\thispagestyle{empty}
+\mbox{}
+\newpage
+
+% ================= REMERCIEMENTS =================
+\thispagestyle{empty}
+\vspace*{\fill}
+
+\begin{center}
+    {\LARGE \itshape \textbf{Remerciements}}
+    \phantomsection
+    \addcontentsline{toc}{chapter}{Remerciements}
+\end{center}
+
+\vspace{1.5cm}
+
+\begin{center}
+\begin{minipage}{0.85\textwidth}
+
+Je tiens à exprimer ma profonde gratitude à Monsieur Jad \textsc{Oualaalou}, mon encadrant au sein du Département Gestion de Portefeuille -- Service Asset Management -- de la Caisse Marocaine des Retraites (CMR), pour son accompagnement, sa disponibilité, ses précieux conseils ainsi que le suivi rigoureux qu'il m'a accordés tout au long de ce stage. Son expertise, sa confiance et la qualité de ses orientations ont constitué un véritable moteur dans la réalisation de ce travail et ont grandement contribué à enrichir cette expérience tant sur le plan technique que professionnel.\\
+
+J'adresse également mes sincères remerciements à l'ensemble du personnel de la Caisse Marocaine des Retraites pour l'accueil chaleureux qui m'a été réservé, leur disponibilité, leur esprit de collaboration et leur bienveillance. Les nombreux échanges avec les collaborateurs ainsi que les connaissances métier qu'ils ont partagées m'ont permis de mieux comprendre les enjeux de la gestion d'actifs et du fonctionnement des marchés financiers, tout en facilitant la bonne conduite de ce projet.\\
+
+Enfin, je tiens à exprimer ma reconnaissance envers l'ensemble du corps professoral de l'École Nationale des Sciences Appliquées de Khouribga (ENSAKh) pour la qualité de la formation qui m'a été dispensée. Les connaissances scientifiques, techniques et méthodologiques acquises tout au long de mon cursus ont constitué un socle solide qui m'a permis d'aborder ce stage avec rigueur, autonomie et professionnalisme.
+
+\end{minipage}
+\end{center}
+
+\vspace*{\fill}
+\newpage
+
+% ================= RESUME =================
+\vspace*{\fill}
+
+\begin{center}
+    {\itshape \LARGE \textbf{Résumé}}
+    \phantomsection
+    \addcontentsline{toc}{chapter}{Résumé}
+\end{center}
+\vspace{1cm}
+
+\noindent
+Ce rapport présente le travail réalisé dans le cadre d'un stage d'ingénieur adjoint au sein de la Caisse Marocaine des Retraites (CMR), établissement public marocain chargé de la gestion des régimes de retraite du secteur public. L'objectif de ce stage est de concevoir et développer un système d'aide à la décision destiné à outiller la gestion opérationnelle du portefeuille de placements de l'institution sur le marché boursier marocain, en s'appuyant sur des indicateurs d'analyse technique adaptés à un pipeline de traitement temps réel.
+
+\vspace{0.3cm}
+\noindent
+Ce document décrit dans un premier temps le contexte organisationnel du stage, à savoir la présentation de la Caisse Marocaine des Retraites, son historique, ses missions et son organisation. Il expose ensuite le cadre du marché des capitaux marocain -- la Bourse des Valeurs de Casablanca (BVC), ses acteurs et son fonctionnement -- avant de recentrer l'analyse sur le c\oe ur du sujet de stage : le trading opérationnel, les types d'ordres, les règles de séance et les indicateurs d'analyse technique mobilisables pour la construction d'un système de décision.
+
+\vspace{0.3cm}
+\noindent
+\textbf{Mots-clés :} Caisse Marocaine des Retraites (CMR), Bourse des Valeurs de Casablanca (BVC), Marché des capitaux, Gestion de portefeuille, Trading opérationnel, Analyse technique, Systèmes de décision algorithmique.
+
+\vspace*{\fill}
+\newpage
+
+\tableofcontents
+\newpage
+
+% ================= INTRODUCTION GENERALE =================
+\chapter*{Introduction générale}
+\phantomsection
+\addcontentsline{toc}{chapter}{Introduction générale}
+\vspace{\baselineskip}
+
+\noindent
+La gestion des régimes de retraite repose sur un équilibre financier de long terme, dans lequel les réserves constituées doivent être placées de manière à en préserver la valeur et à en optimiser le rendement, tout en maîtrisant strictement les risques encourus. Dans ce contexte, la gestion active d'un portefeuille de valeurs mobilières -- et en particulier son volet opérationnel, à savoir l'exécution des ordres sur le marché boursier -- constitue un enjeu central pour toute caisse de retraite amenée à intervenir sur les marchés financiers.
+
+\vspace{0.3cm}
+\noindent
+C'est dans ce contexte que s'inscrit le présent stage, réalisé au sein de la Caisse Marocaine des Retraites (CMR), institution marocaine de référence en matière de gestion des pensions de retraite du secteur public. L'objectif du stage est de concevoir et de développer un \textbf{système d'aide à la décision pour le trading opérationnel}, destiné à outiller le suivi et l'exécution des opérations de marché sur la Bourse des Valeurs de Casablanca (BVC). Ce système s'appuie sur une modélisation rigoureuse des règles de fonctionnement du marché (types d'ordres, horaires de séance, seuils de variation) ainsi que sur des indicateurs d'analyse technique calibrés pour un usage en quasi temps réel.
+
+\vspace{0.3cm}
+\noindent
+Ce rapport est structuré en quatre parties principales. Le premier chapitre présente l'organisme d'accueil, la Caisse Marocaine des Retraites : son historique, ses missions et son organisation. Le deuxième chapitre détaille le cadre du stage, ses objectifs et la méthodologie de travail adoptée. Le troisième chapitre présente le marché des capitaux marocain -- la BVC, ses acteurs, son fonctionnement -- afin de poser les bases nécessaires à la compréhension du sujet. Enfin, le quatrième chapitre recentre l'étude sur le c\oe ur du stage : le trading opérationnel, les types d'ordres, les contraintes de marché, les indicateurs d'analyse technique étudiés, et un premier blueprint de mise en \oe uvre du système de décision.
+
+% ================= CHAPITRE 1 : ORGANISME D'ACCUEIL =================
+\chapter{Présentation de l'organisme d'accueil : la Caisse Marocaine des Retraites}
+
+\section{Historique et cadre juridique}
+
+\noindent
+La Caisse Marocaine des Retraites (CMR) trouve son origine en \textbf{1930}, date à laquelle un premier régime de retraite est instauré au profit des fonctionnaires civils français exerçant au Maroc, ainsi que de leurs ayants droit, avant d'être progressivement étendu au personnel marocain. Établissement historiquement ancien, la CMR a accompagné l'évolution du système de la fonction publique marocaine depuis le Protectorat jusqu'à l'indépendance, puis au-delà.
+
+\vspace{0.3cm}
+\noindent
+En \textbf{1996}, en vertu de la loi du 7 août 1996, la CMR est réorganisée et dotée de la \textbf{personnalité morale et de l'autonomie financière}, statut d'établissement public qu'elle conserve à ce jour. Elle relève de la tutelle du \textbf{Ministère de l'Économie et des Finances}.
+
+\vspace{0.3cm}
+\noindent
+% [Placeholder] Compléter avec la date exacte et les références légales des principaux
+% textes fondateurs des régimes gérés (loi n° 011-71 du 30 décembre 1971 pour le régime
+% des pensions civiles, texte fondateur du régime des pensions militaires, etc.),
+% à valider auprès de l'encadrant.
+
+\section{Missions et valeurs}
+
+\noindent
+La Caisse Marocaine des Retraites assure une \textbf{double mission, sociale et financière} :
+
+\begin{itemize}
+    \item \textbf{Mission sociale} : gestion des régimes de pensions du secteur public, notamment le \textbf{régime des pensions civiles} (fonctionnaires de l'État, agents des collectivités locales et de certains établissements publics), le \textbf{régime des pensions militaires} (Forces Armées Royales et Forces Auxiliaires), le \textbf{régime de retraite complémentaire Attakmili}, ainsi que des \textbf{régimes non cotisants} (pensions d'invalidité, allocations des Anciens Résistants et Anciens Membres de l'Armée de Libération) ;
+    \item \textbf{Mission financière} : gestion des ressources collectées (cotisations des affiliés actifs) selon un mode de fonctionnement en \textbf{répartition}, dans lequel les cotisations des actifs financent directement les pensions des retraités, complétée par une gestion financière des réserves constituées afin d'assurer la pérennité et l'équilibre à long terme du système.
+\end{itemize}
+
+\noindent
+\newline
+Ces missions reposent sur des valeurs de service public, de solidarité intergénérationnelle et de rigueur dans la gestion des fonds qui lui sont confiés, guidant l'ensemble des interventions de l'institution auprès de ses affiliés et pensionnés.
+
+\section{Organisation et gouvernance}
+
+\noindent
+La Caisse est dirigée par un directeur nommé par décret, chargé de la gestion administrative et financière de l'établissement ainsi que de la mise en \oe uvre des décisions du conseil d'administration. La gouvernance de la CMR s'appuie sur un conseil d'administration qui arrête les grandes orientations stratégiques de l'institution, notamment en matière de politique de placement des réserves.
+
+\vspace{0.5cm}
+\noindent
+\begin{figure}[H]
+  \includegraphics[width=0.9\textwidth]{logos/cmr_organigramme.png}
+  \caption{Organigramme de la Caisse Marocaine des Retraites}
+  \label{fig:organigramme-cmr}
+\end{figure}
+
+\noindent
+
+
+\section{Direction d'accueil du stage}
+
+\noindent
+Le présent stage a été réalisé au sein du \textbf{Département Gestion de Portefeuille}, et plus précisément du \textbf{Service Asset Management} de la Caisse Marocaine des Retraites. Ce service est chargé de la gestion opérationnelle des placements de l'institution sur les marchés financiers, incluant le suivi des portefeuilles d'actifs (actions, obligations, OPCVM), l'analyse des opportunités de marché et l'exécution des ordres de bourse dans le respect des règles prudentielles et des orientations stratégiques fixées par les instances de gouvernance de la CMR.
+
+\vspace{0.3cm}
+\noindent
+% [Placeholder] Compléter avec le positionnement exact du Service Asset Management
+% dans l'organigramme du Département Gestion de Portefeuille (rattachement
+% hiérarchique, autres services du département, effectifs, etc.), une fois
+% confirmé par l'encadrant.
+
+\section{Principaux domaines d'intervention}
+
+\noindent
+Parmi les principaux domaines d'intervention de la Caisse Marocaine des Retraites figurent \newline
+
+\begin{itemize}
+    \item La liquidation et le versement des pensions de retraite (civiles et militaires) ;
+    \item La gestion du régime de retraite complémentaire Attakmili ;
+    \item Le suivi des cotisations des affiliés actifs et des employeurs ;
+    \item La gestion financière des réserves de l'institution, incluant les placements en valeurs mobilières (actions, obligations) sur les marchés de capitaux ;
+    \item Les plateformes de services numériques (e-services) destinées aux affiliés et pensionnés (consultation des droits, simulation de pension, prise de rendez-vous, etc.).
+\end{itemize}
+
+% [Placeholder] Détailler chaque domaine (chiffres clés, nombre d'affiliés et de
+% pensionnés, montant des réserves gérées) une fois les données correspondantes
+% validées par l'encadrant.
+
+% ================= CHAPITRE 2 : CADRE DU STAGE =================
+\chapter{Cadre du stage}
+
+\section{Contexte et problématique}
+
+\noindent
+La pérennité financière d'un régime de retraite fonctionnant, au moins partiellement, sur la base de réserves placées, dépend directement de la qualité de la gestion de ces réserves sur les marchés financiers. Or, l'exécution opérationnelle des ordres de bourse -- au-delà des seuls choix stratégiques d'allocation d'actifs -- obéit à des règles précises (types d'ordres, horaires de séance, seuils de variation, contraintes de liquidité) dont la maîtrise conditionne l'efficacité et la sécurité des opérations de placement.
+
+\vspace{0.3cm}
+\noindent
+C'est ce constat qui a motivé la définition du sujet de stage : la conception d'un \textbf{système d'aide à la décision pour le trading opérationnel}, capable de formaliser les règles de fonctionnement du marché boursier marocain et d'exploiter des indicateurs d'analyse technique pertinents pour appuyer les décisions d'exécution.
+
+\section{Objectifs du stage}
+
+\noindent
+\textbf{Objectifs pédagogiques :}\newline
+\begin{itemize}
+    \item Se familiariser avec le fonctionnement d'une caisse de retraite et de sa fonction de gestion financière ;
+    \item Mettre en pratique, dans un contexte réel, des compétences d'ingénierie logicielle et d'analyse quantitative des marchés financiers acquises en formation ;
+    \item Développer une méthodologie de conduite de projet, de l'analyse du besoin métier jusqu'à la mise en \oe uvre technique.\newline
+\end{itemize}
+
+\noindent
+\textbf{Objectifs projet :}\newline
+\begin{itemize}
+    \item Acquérir une compréhension approfondie du fonctionnement du marché des capitaux marocain (BVC), de ses acteurs et de ses règles opérationnelles (cf. Chapitre 3) ;
+    \item Formaliser les règles de trading opérationnel pertinentes pour un système de décision : types d'ordres, horaires de séance, seuils de variation, risques et coûts associés (cf. Chapitre 4) ;
+    \item Sélectionner et calibrer un jeu d'indicateurs d'analyse technique adaptés à un usage en quasi temps réel ;
+    \item Concevoir un prototype de système d'aide à la décision exploitant ces règles et indicateurs, et évaluer sa pertinence avant toute intégration éventuelle aux processus de gestion de la CMR.
+\end{itemize}
+
+\section{Encadrement et méthodologie de travail adoptée}
+
+\noindent
+Le stage s'est déroulé sous l'encadrement de Monsieur Jad \textsc{Oualaalou}, au sein de la Caisse Marocaine des Retraites. Des points de suivi réguliers avec l'encadrant ont permis de valider progressivement le périmètre fonctionnel du projet, ainsi que la priorisation des indicateurs techniques retenus pour le système.
+
+\vspace{0.3cm}
+\noindent
+La méthodologie adoptée est de nature \textbf{itérative} : chaque brique fonctionnelle du système (compréhension du marché, formalisation des règles opérationnelles, sélection des indicateurs, prototypage) a été traitée successivement, discutée puis validée avant d'être intégrée à l'ensemble du système.
+
+% [Placeholder] Compléter avec les outils de suivi effectivement utilisés (ex.
+% tableau de bord, réunions hebdomadaires, planning) et le découpage réel du
+% stage en jalons/sprints.
+
+% ================= CHAPITRE 3 : LE MARCHE DES CAPITAUX MAROCAIN =================
+\chapter{Le marché des capitaux marocain : la Bourse des Valeurs de Casablanca}
+
+\noindent
+Avant d'aborder le c\oe ur opérationnel du sujet de stage, ce chapitre propose une présentation du cadre dans lequel s'inscrit le projet : la Bourse des Valeurs de Casablanca (BVC), son fonctionnement et ses principaux acteurs.
+
+\section{Fonctionnement général de la BVC}
+
+\noindent
+La BVC est un marché \textbf{centralisé et dirigé par les ordres}, organisé autour de deux compartiments : le \textbf{Marché Central}, où se négocient les transactions courantes à l'unité par confrontation directe de l'offre et de la demande, et le \textbf{Marché de Blocs}, réservé aux transactions de gré à gré portant sur des quantités massives, généralement le fait d'investisseurs institutionnels.
+
+\vspace{0.3cm}
+\noindent
+Selon la liquidité de chaque valeur, la cotation s'effectue soit en \textbf{continu} (exécution immédiate dès compatibilité entre un ordre d'achat et un ordre de vente), soit par \textbf{fixing} (accumulation des ordres puis détermination d'un cours unique d'équilibre à heures fixes), soit encore en \textbf{multifixing} pour les valeurs de liquidité intermédiaire (plusieurs fixings successifs au cours d'une même séance). Ce cours d'équilibre repose sur le calcul du \textbf{Prix d'Équilibre Théorique (PET)}, déterminé en phase de pré-ouverture de manière à maximiser le volume de titres échangeables.
+
+\section{Principaux acteurs du marché}
+
+\noindent
+Le fonctionnement de la BVC repose sur l'articulation de plusieurs acteurs aux rôles complémentaires. Deux d'entre eux occupent une position particulièrement structurante et dominante dans l'organisation du marché :
+
+\begin{itemize}
+    \item \textbf{L'Autorité Marocaine du Marché des Capitaux (AMMC)} : régulateur du marché, chargé de veiller à l'intégrité des transactions et à la protection des investisseurs. C'est notamment elle qui fixe et peut réviser le seuil de variation quotidien autorisé sur les valeurs cotées ;
+    \item \textbf{Les Sociétés de Bourse (SDB)} : \textbf{seuls} intermédiaires habilités à transmettre des ordres au marché central, pour le compte des investisseurs -- elles détiennent de fait un monopole légal sur l'introduction des ordres, ce qui en fait un acteur dominant et incontournable du circuit d'exécution ;
+    \item \textbf{Les investisseurs institutionnels} (banques, compagnies d'assurances, organismes de retraite, OPCVM), qui concentrent l'essentiel des volumes échangés (de l'ordre de 60 à 65\% des volumes selon les années), à l'image du rôle que la CMR elle-même peut être amenée à jouer en tant qu'investisseur institutionnel dans le cadre de la gestion de ses réserves ;
+    \item \textbf{Les investisseurs particuliers}, très nombreux en nombre de comptes ouverts mais représentant une part plus limitée des volumes globaux échangés ;
+    \item \textbf{Maroclear}, dépositaire central chargé de la conservation dématérialisée des titres et du règlement-livraison des transactions ;
+    \item \textbf{La Bourse de Casablanca (société gestionnaire)}, société anonyme de droit privé à laquelle est concédée la gestion technique et le développement du marché (organisation des séances, système de cotation électronique, groupes de cotation).
+\end{itemize}
+
+\noindent
+% [Placeholder] Compléter, si les chiffres officiels de l'année en cours sont
+% disponibles, la répartition exacte des volumes échangés entre investisseurs
+% institutionnels et particuliers, en citant la source (rapport annuel AMMC ou
+% Bourse de Casablanca).
+
+\section{L'indice MASI}
+
+\noindent
+La performance globale du marché est mesurée à travers l'indice \textbf{MASI (Moroccan All Shares Index)}, pondéré par la capitalisation boursière flottante des sociétés cotées. Cet indice, largement dominé par les valeurs bancaires et le secteur du BTP, sert de référence pour l'évaluation de la performance d'un portefeuille géré passivement ou activement, et constitue à ce titre un point de repère pertinent pour la gestion financière de la CMR.
+
+\section{Analyse exploratoire de la cote de la BVC (2026)}
+\label{sec:eda-bvc}
+
+\noindent
+Afin d'objectiver le constat de concentration sectorielle évoqué à la section précédente, une courte analyse exploratoire de la composition actuelle de la cote a été menée à partir des données de la BVC, collectées par extraction (\textit{scraping}) de la page officielle du \textbf{Listing des émetteurs}\footnote{\url{https://www.casablanca-bourse.com/fr/listing-des-emetteurs}} à la date de rédaction de ce rapport (2026). Cette analyse porte sur l'ensemble des émetteurs cotés, répartis par secteur d'activité selon la classification retenue par la Bourse de Casablanca.
+
+\subsection{Répartition des émetteurs par secteur}
+
+\noindent
+La figure \ref{fig:eda-repartition} présente la répartition du nombre d'émetteurs cotés par secteur d'activité. Le secteur \textbf{Banques} concentre à lui seul \textbf{18,6\%} des émetteurs, suivi des \textbf{Distributeurs} (9,7\%) et du \textbf{Bâtiment et Matériaux de Construction} (8,9\%), tandis qu'une longue liste de secteurs plus étroits (Chimie, Santé, Transport, Sociétés de Portefeuilles/Holdings, etc.) ne rassemblent chacun qu'une ou deux valeurs cotées.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{logos/repartition-emetteurs-bvc.jpeg}
+  \caption{Répartition des émetteurs cotés à la BVC par secteur d'activité (\% du total, 2026)}
+  \label{fig:eda-repartition}
+\end{figure}
+
+\noindent
+Ce même constat est repris, de façon plus lisible, par la figure \ref{fig:eda-top10-nb}, qui classe les dix premiers secteurs par nombre d'émetteurs.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{logos/top10-secteurs-bvc.png}
+  \caption{Top 10 des secteurs de la BVC par nombre d'émetteurs}
+  \label{fig:eda-top10-nb}
+\end{figure}
+
+\subsection{Concentration en capital : le rôle des Télécommunications}
+
+\noindent
+Si l'on raisonne non plus en nombre d'émetteurs mais en \textbf{capital total} (nombre de titres), la hiérarchie sectorielle change sensiblement : le secteur des \textbf{Télécommunications}, pourtant représenté par un nombre très restreint d'émetteurs, arrive en tête avec près de \textbf{879 millions de titres}, immédiatement suivi par les \textbf{Banques} (818 millions) et par le secteur \textbf{Participation et promotion immobilières} (593 millions), comme illustré par la figure \ref{fig:eda-top10-capital}. Ce décalage entre nombre d'émetteurs et poids en capital illustre le fait qu'un secteur peu diversifié en nombre de valeurs peut néanmoins peser fortement sur le marché via une ou deux capitalisations dominantes -- un phénomène directement pertinent pour l'analyse de la pondération de l'indice MASI évoquée à la section précédente.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{logos/top10-capital-total.jpeg}
+  \caption{Top 10 des secteurs de la BVC par capital total, en nombre de titres)}
+  \label{fig:eda-top10-capital}
+\end{figure}
+
+\subsection{Mesure de la concentration sectorielle : indice de Gini}
+
+\noindent
+Pour quantifier plus rigoureusement ce degré de concentration, un \textbf{indice de Gini} a été calculé sur la répartition des émetteurs par secteur, à partir de la courbe de Lorenz correspondante (figure \ref{fig:eda-gini}). Cet indice, compris entre 0 (répartition parfaitement égalitaire entre tous les secteurs) et 1 (un seul secteur concentrerait la totalité des émetteurs), est estimé à \textbf{0,464} pour la cote de la BVC en 2026.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{logos/concentration-sectorielle.png}
+  \caption{Courbe de Lorenz et indice de Gini de la concentration sectorielle de la BVC}
+  \label{fig:eda-gini}
+\end{figure}
+
+\noindent
+Une valeur de 0,464 traduit une concentration \textbf{modérée à significative} : la cote n'est ni parfaitement diversifiée entre secteurs, ni dominée par un unique secteur monopolistique, mais un nombre restreint de secteurs (Banques, Distributeurs, BTP) rassemble une part disproportionnée des émetteurs. Ce résultat rejoint et objective, par une mesure statistique simple, le constat déjà formulé à la section \ref{sec:blueprint} : un portefeuille indexé sur le MASI reste, de fait, structurellement concentré sur un nombre limité de secteurs, ce qui constitue une donnée de contexte pertinente pour la gestion des réserves de la CMR.
+
+\vspace{0.3cm}
+\noindent
+% [Placeholder] Préciser ici la méthodologie exacte de collecte (date d'extraction,
+% éventuels filtres appliqués sur le listing des émetteurs) et, le cas échéant,
+% joindre en annexe le script de scraping utilisé.
+
+% ================= CHAPITRE 4 : LE TRADING OPERATIONNEL =================
+\chapter{Trading opérationnel : c\oe ur du sujet de stage}
+
+\noindent
+Ce chapitre constitue le c\oe ur technique du présent stage. Il présente, de façon volontairement pédagogique et progressive, les règles opérationnelles du trading à la BVC qui structurent la conception du système d'aide à la décision développé, avant d'exposer les indicateurs d'analyse technique étudiés en complément de la formation interne, et de proposer un premier blueprint de mise en \oe uvre du système.
+
+\section{Lot minimum et unité de négociation}
+
+\noindent
+Chaque valeur cotée à la BVC est soumise à un \textbf{lot minimum de négociation}, c'est-à-dire une quantité minimale et un multiple obligatoire pour toute transaction (par exemple 1, 10, 50 ou 100 titres selon le prix unitaire de la valeur). Cette contrainte, purement quantitative, doit être intégrée dans tout système algorithmique de passage d'ordres : la quantité calculée à partir d'un budget alloué doit systématiquement être arrondie au multiple du lot minimum, sous peine de rejet de l'ordre par le système de négociation.
+
+\section{Les quatre types d'ordres : logique générale}
+
+\noindent
+Passer un ordre en bourse revient toujours à répondre à \textbf{deux questions} : \textit{à quel prix accepte-t-on d'être exécuté ?} et \textit{à quel moment l'ordre doit-il devenir actif ?} C'est la combinaison des réponses à ces deux questions qui donne naissance aux quatre types d'ordres utilisés à la BVC. Un moyen simple de les retenir est de les opposer deux par deux :
+
+\begin{itemize}
+    \item \textbf{Ordre au marché} \textit{vs} \textbf{Ordre à cours limité} : ces deux ordres sont \textbf{actifs immédiatement} dès leur transmission ; ils ne diffèrent que par la maîtrise (ou non) du prix d'exécution.
+    \item \textbf{Ordre à seuil de déclenchement (stop)} \textit{vs} \textbf{Ordre à plage de déclenchement (stop-limit)} : ces deux ordres sont \textbf{dormants} -- ils ne font rien tant qu'un seuil de déclenchement fixé par l'investisseur n'est pas atteint. Une fois ce seuil franchi, ils se transforment respectivement en un ordre au marché (pour le stop) ou en un ordre à cours limité (pour le stop-limit).
+\end{itemize}
+
+\noindent
+Autrement dit, l'ordre stop et l'ordre stop-limit ne sont pas des types d'ordres fondamentalement nouveaux : ce sont des \textbf{ordres conditionnels} qui, une fois déclenchés, redeviennent l'un des deux premiers types. Cette lecture en deux étages (immédiat / conditionnel) est la clé pour comprendre l'ensemble de la section.
+
+\subsection{Ordre au marché}
+
+\noindent
+L'\textbf{ordre au marché} est transmis sans aucune indication de prix : l'investisseur demande une exécution immédiate, au meilleur prix disponible sur la feuille de marché au moment de la transmission.
+
+\begin{itemize}
+    \item \textbf{Ce qu'il garantit} : l'exécution de l'ordre, dès lors qu'une contrepartie suffisante existe (liquidité disponible en face) ;
+    \item \textbf{Ce qu'il ne garantit pas} : le prix obtenu, qui peut s'écarter significativement du dernier cours coté si le carnet d'ordres est peu profond (glissement de prix, ou \textit{slippage}) ;
+    \item \textbf{Usage typique} : lorsque la priorité absolue est d'entrer ou de sortir d'une position rapidement, et que le prix exact importe moins que la certitude d'exécution -- par exemple pour solder une position en urgence.
+\end{itemize}
+
+\subsection{Ordre à cours limité}
+
+\noindent
+L'\textbf{ordre à cours limité} précise un prix maximal à ne pas dépasser à l'achat (ou un prix minimal à ne pas descendre en dessous à la vente). L'ordre ne pourra être exécuté qu'à ce prix ou à un prix plus favorable pour l'investisseur.
+
+\begin{itemize}
+    \item \textbf{Ce qu'il garantit} : le prix (ou mieux) ;
+    \item \textbf{Ce qu'il ne garantit pas} : l'exécution -- si le marché ne traite jamais au prix limite fixé (ou mieux), l'ordre reste en carnet, partiellement exécuté, ou expire sans avoir été exécuté ;
+    \item \textbf{Usage typique} : lorsque la maîtrise du prix d'entrée ou de sortie prime sur la certitude d'être exécuté -- c'est le type d'ordre par défaut recommandé pour un système de décision automatisé, car il évite les mauvaises surprises de prix.
+\end{itemize}
+
+\subsection{Ordre à seuil de déclenchement (stop)}
+
+\noindent
+L'\textbf{ordre à seuil de déclenchement}, communément appelé \textit{stop} (ou \textit{stop-loss} lorsqu'il vise à limiter une perte), est un ordre \textbf{conditionnel et dormant} : il ne figure pas dans le carnet d'ordres tant qu'un \textbf{seuil de déclenchement} fixé par l'investisseur n'a pas été atteint par le marché. Dès que ce seuil est franchi, l'ordre se transforme automatiquement en \textbf{ordre au marché}, et est donc exécuté au meilleur prix disponible à cet instant, quel qu'il soit.
+
+\begin{itemize}
+    \item \textbf{Usage typique} : limiter une perte en cas de baisse (stop-loss classique, placé sous le prix d'achat), ou au contraire sécuriser un gain déjà acquis (\textit{trailing stop}) ; peut également servir à confirmer une cassure haussière (stop d'achat placé au-dessus du marché) ;
+    \item \textbf{Risque associé} : le \textbf{risque de gap} -- une fois le seuil franchi, l'exécution se fait au marché, donc sans maîtrise du prix. Si le cours \og{}saute\fg{} brutalement au-delà du seuil (par exemple à la suite d'une annonce publiée hors séance), l'ordre peut être exécuté à un prix nettement plus défavorable que le seuil visé.
+\end{itemize}
+
+\subsection{Ordre à plage de déclenchement (stop-limit)}
+
+\noindent
+L'\textbf{ordre à plage de déclenchement}, ou \textit{stop-limit}, combine les deux logiques précédentes : comme l'ordre stop, il reste dormant jusqu'à ce qu'un seuil de déclenchement soit franchi ; mais une fois ce seuil atteint, il ne se transforme \textbf{pas} en ordre au marché, mais en \textbf{ordre à cours limité}, avec un prix limite également fixé à l'avance par l'investisseur, définissant ainsi une véritable \textbf{plage} d'exécution acceptable.
+
+\begin{itemize}
+    \item \textbf{Ce qu'il apporte par rapport au stop simple} : une protection sur le prix d'exécution, qui ne peut jamais dépasser (à l'achat) ou descendre en dessous (à la vente) de la limite fixée -- il élimine donc le risque de gap non maîtrisé ;
+    \item \textbf{Ce qu'il perd en contrepartie} : la garantie d'exécution. Si le marché franchit le seuil de déclenchement puis continue son mouvement au-delà de la limite de prix fixée sans jamais revenir dans la fourchette tolérée, l'ordre stop-limit peut ne \textbf{jamais} être exécuté, exposant l'investisseur au risque inverse (rester dans une position qu'il souhaitait précisément quitter).
+\end{itemize}
+
+\vspace{0.3cm}
+\noindent
+Le tableau \ref{tab:types-ordres} synthétise les principales caractéristiques de ces quatre types d'ordres.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Type d'ordre} & \textbf{Prix maîtrisé} & \textbf{Exécution garantie} & \textbf{Déclenchement} \\
+\midrule
+Au marché       & Non & Oui (si liquidité) & Immédiat \\
+À cours limité  & Oui & Non                & Si prix atteint la limite \\
+Stop (seuil)    & Non & Oui (une fois déclenché) & Franchissement d'un seuil \\
+Stop-limit (plage) & Oui (borné) & Non     & Seuil, puis limite de prix \\
+\bottomrule
+\end{tabular}
+\caption{Synthèse comparative des quatre types d'ordres à la BVC}
+\label{tab:types-ordres}
+\end{table}
+
+\subsection{Vocabulaire opérationnel complémentaire}
+
+\noindent
+Au-delà des quatre types d'ordres eux-mêmes, la pratique du trading opérationnel mobilise un vocabulaire précis, dont la maîtrise conditionne la formalisation correcte des règles d'un système de décision :
+
+\begin{itemize}
+    \item \textbf{Point d'entrée} : niveau de prix (ou condition de marché) à partir duquel une position est ouverte, généralement matérialisé par un ordre au marché ou à cours limité ;
+    \item \textbf{Point de sortie} : niveau de prix auquel une position ouverte est clôturée, que ce soit par la réalisation d'un gain ou d'une perte ;
+    \item \textbf{Stop-loss} : niveau de sortie défensif, destiné à limiter une perte si le marché évolue défavorablement après l'entrée en position -- il se traduit opérationnellement par un ordre à seuil de déclenchement placé sous (achat) ou au-dessus (vente) du prix d'entrée ;
+    \item \textbf{Take-profit} : niveau de sortie offensif, destiné à sécuriser un gain une fois un objectif de prix atteint -- il se traduit généralement par un ordre à cours limité placé au-delà du prix d'entrée, dans le sens favorable ;
+    \item \textbf{Glissement de prix (\textit{slippage})} : écart entre le prix théoriquement visé par un ordre et le prix réellement obtenu à l'exécution, phénomène qui affecte principalement les ordres au marché et les ordres stop une fois déclenchés (cf. section \ref{sec:risques-couts}).
+\end{itemize}
+
+\noindent
+Ce vocabulaire permet de formuler, de façon simple, la logique d'entrée/sortie qui structure tout système de décision : \textit{entrer} sur un signal donné, \textit{protéger} la position via un stop-loss, et \textit{sécuriser} le gain via un take-profit -- trois décisions qui se traduisent chacune par l'un des quatre types d'ordres présentés ci-dessus. Ce vocabulaire est utilisé à des fins pédagogiques, pour relier les règles de marché présentées à la logique de décision développée en section \ref{sec:indicateurs}.
+
+\section{Cycle de séance et contraintes de marché}
+
+\noindent
+La séance de négociation à la BVC se déroule selon un cycle structuré : \textbf{pré-ouverture} (à partir de 09h00, accumulation des ordres et calcul du PET, sans transaction), \textbf{fixing d'ouverture} (confrontation générale des ordres et détermination du cours d'ouverture), \textbf{séance en continu} (exécution instantanée dès compatibilité de deux ordres, pour les valeurs les plus liquides), \textbf{pré-clôture} et \textbf{fixing de clôture} (détermination du cours officiel de référence pour la séance suivante). Les valeurs de liquidité intermédiaire sont, quant à elles, cotées au \textbf{multifixing} (plusieurs fixings successifs au cours de la séance).
+
+\vspace{0.3cm}
+\noindent
+Par ailleurs, la BVC applique un mécanisme de \textbf{seuil de variation maximale journalière} (circuit breaker) : lorsqu'une valeur est susceptible de traiter à un cours dépassant sa borne de variation autorisée par rapport à son cours de référence, sa cotation est automatiquement suspendue (état \og{}Réservé\fg{}), afin de limiter les mouvements de panique et de laisser le temps au marché d'absorber l'information disponible. À la date de rédaction de ce rapport, ces seuils sont fixés par l'AMMC à \textbf{$\pm$6\%} pour les titres de capital cotés en continu, \textbf{$\pm$2\%} pour les titres de créance (obligations), et élargis à \textbf{$\pm$10\%} pendant les cinq premières séances suivant l'admission d'une valeur nouvellement introduite à la cote. Ces seuils étant susceptibles d'évolution sur décision de l'AMMC, il est recommandé qu'un système de décision automatisé lise leur valeur courante depuis une source de référence plutôt que de les coder en dur.
+
+\section{Risques et coûts opérationnels}
+\label{sec:risques-couts}
+
+\noindent
+La conception d'un système de trading opérationnel doit distinguer deux catégories d'éléments, de nature différente :
+
+\begin{itemize}
+    \item Les \textbf{coûts}, certains et connus à l'avance : commission de courtage prélevée par la société de bourse, et Taxe sur les Transactions Boursières (TTB), à intégrer systématiquement dans le calcul de rentabilité nette d'une stratégie ;
+    \item Les \textbf{risques}, incertains par nature : risque de \textbf{liquidité} (difficulté à exécuter une transaction sans impact significatif sur le prix, notamment sur les valeurs peu échangées), risque de \textbf{gap} (écart entre le prix théorique visé par un ordre stop et son prix réel d'exécution, notamment après une annonce publiée hors séance), et risque de \textbf{levier} (amplification des pertes en cas de recours à des fonds empruntés).
+\end{itemize}
+
+\section{Analyse technique : indicateurs mobilisables pour le système de décision}
+\label{sec:indicateurs}
+
+\noindent
+Au-delà de la formation interne dispensée par la CMR sur le fonctionnement du marché et les principes de gestion de portefeuille, une démarche d'approfondissement personnel a été engagée durant le stage afin de mieux appréhender les outils d'\textbf{analyse technique} couramment utilisés pour l'étude du comportement des cours boursiers. Cette section présente, de façon synthétique, les indicateurs ainsi étudiés, en systématisant pour chacun la question à laquelle il permet de répondre, avant de proposer, en section \ref{sec:blueprint}, un premier cadre de mise en \oe uvre pour le système de décision visé par le stage.
+
+\vspace{0.3cm}
+\noindent
+\textbf{Note importante :} Cette section documente les indicateurs \textbf{réellement implémentés} dans le prototype du système d'aide à la décision, mis en production en août 2026. Les formules, seuils et paramètres spécifiés ci-dessous correspondent à la configuration du moteur de décision et sont extraits du code source du pipeline (fichiers \texttt{src/indicators.py}, \texttt{src/signals.py} et configuration \texttt{config/methodology.py}).
+
+\subsection{Moyennes mobiles : SMA et EMA}
+
+\noindent
+Les \textbf{moyennes mobiles} répondent à la question : \textit{« Quelle est la tendance de fond du cours, une fois débarrassée du bruit des fluctuations quotidiennes ? »} En calculant, à chaque instant, la moyenne des cours de clôture sur une fenêtre glissante de $n$ périodes, elles lissent les variations erratiques et font apparaître une direction générale plus lisible.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Catégorie :} Indicateur de \textbf{tendance} (\textit{trend-following indicator})
+
+\vspace{0.2cm}
+\noindent
+Deux variantes sont implémentées dans le système :
+
+\subsubsection*{SMA (Simple Moving Average)}
+
+\noindent
+La \textbf{SMA} attribue un poids identique à chacune des $n$ dernières clôtures :
+\[
+SMA_t = \frac{1}{n}\sum_{i=0}^{n-1} C_{t-i}
+\]
+où $C_t$ désigne le cours de clôture au jour $t$.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Implémentation :} Deux fenêtres sont calculées en parallèle :
+\begin{itemize}
+    \item \textbf{SMA-20} (court terme) : fenêtre de 20 jours, capture les mouvements tactiques à 1 mois
+    \item \textbf{SMA-50} (moyen terme) : fenêtre de 50 jours, capture la tendance à ~2.5 mois
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Critique d'interprétation :} Un cours situé au-dessus de sa SMA-20 indique une tendance haussière à court terme ; en dessous, une tendance baissière. L'écart entre SMA-20 et SMA-50 (stratégie dite du \textit{golden cross}) permet de distinguer les corrections cycliques des changements de tendance structurels.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Limitation majeure :} La SMA réagit avec retard aux inversions de tendance, puisqu'elle traite une clôture ancienne de la même manière qu'une clôture récente. Un croisement haussier du cours au-dessus de la SMA-50 survient donc après que le mouvement haussier est déjà en cours depuis plusieurs semaines.
+
+\subsubsection*{EMA (Exponential Moving Average)}
+
+\noindent
+L'\textbf{EMA} corrige cette limitation en attribuant un poids décroissant aux observations plus anciennes :
+\[
+EMA_t = \alpha\, C_t + (1-\alpha)\, EMA_{t-1}, \qquad \alpha = \frac{2}{n+1}
+\]
+
+\noindent
+Le facteur de lissage $\alpha$ détermine le poids accordé à la dernière clôture : plus $n$ est petit, plus $\alpha$ est élevé, et plus l'EMA réagit vite aux mouvements récents, au prix d'une plus grande sensibilité au bruit de marché.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Implémentation :} Une \textbf{EMA-20} est calculée (fenêtre exponentielle équivalente à une SMA de 20 périodes), avec un facteur de lissage $\alpha = \frac{2}{20+1} \approx 0.0952$. Cela signifie que chaque nouvelle clôture apporte 9,52\% de poids ; l'historique antérieur accumule le poids restant (90,48\%), pondéré exponentiellement.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Condition d'activité :} Une EMA commence à produire des valeurs significatives dès la première observation (mode \textit{graceful degradation}), mais n'atteint sa précision stable que après environ 3× sa période (soit ~60 jours pour une EMA-20). En pratique, les premières 20 valeurs sont donc marquées avec le statut \textit{INSUFFICIENT\_DATA}, même si un calcul numérique existe.
+
+\subsection{RSI (Relative Strength Index)}
+
+\noindent
+\textbf{Question traitée :} \textit{« Le marché a-t-il été acheté ou vendu de façon excessive sur la période récente ? »}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Catégorie :} Indicateur de \textbf{momentum} (capacité du mouvement actuel à se poursuivre)
+
+\vspace{0.2cm}
+\noindent
+Le \textbf{RSI} est un oscillateur borné entre 0 et 100, construit à partir du rapport entre l'amplitude moyenne des hausses et celle des baisses observées sur une fenêtre de $n$ périodes :
+\[
+RS = \frac{\text{Gain moyen sur n jours}}{\text{Perte moyenne sur n jours}}, \qquad RSI = 100 - \frac{100}{1+RS}
+\]
+
+\noindent
+où les gains moyens et les pertes moyennes sont calculés selon la \textbf{méthode de Wilder} (moyenne lissée, non simple moyenne) :
+
+\begin{align*}
+\text{Gain moyen}_t &= \frac{(\text{Gain moyen}_{t-1} \times (n-1) + \text{Gain}_{t})}{n} \\
+\text{Perte moyenne}_t &= \frac{(\text{Perte moyenne}_{t-1} \times (n-1) + \text{Perte}_{t})}{n}
+\end{align*}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Implémentation :} Une fenêtre de $n = 14$ jours est utilisée (standard du marché). Le RSI est calculé pour chaque jour disposant d'au moins 15 observations consécutives (14 différences + 1 point d'initialisation). Pour les dates antérieures, le RSI reste \texttt{NaN}.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Zones d'interprétation :}
+\begin{itemize}
+    \item \textbf{RSI < 30} : zone de \textbf{survente} — le titre a enregistré plus de pertes que de gains en moyenne ; un rebond est probable ;
+    \item \textbf{RSI > 70} : zone de \textbf{surachat} — le titre a enregistré plus de gains que de pertes ; une consolidation ou correction est probable ;
+    \item \textbf{30 ≤ RSI ≤ 70} : zone \textbf{neutre} — l'équilibre achat/vente est maintenu.
+\end{itemize}
+
+\noindent
+\textbf{Important :} Ces zones NE sont PAS des ordres d'achat ou de vente automatiques. Elles traduisent un \textbf{risque d'essoufflement} de la tendance en cours. En effet, un RSI extrême (< 30 ou > 70) indique que les gains (ou pertes) sont concentrés, ce qui suggère une saturation émotionnelle du marché. Cependant, un RSI peut rester extrême pendant plusieurs jours si la tendance reste forte. D'autres éléments (MACD, volume) doivent confirmer l'inversion.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Limitation :} Le RSI n'indique pas l'\textbf{ampleur} de la tendance, seulement son intensité locale. Un RSI > 70 peut accompagner une hausse à $+1\%$ ou à $+15\%$ — il ne le dit pas.
+
+\subsection{MACD (Moving Average Convergence Divergence)}
+
+\noindent
+\textbf{Question traitée :} \textit{« La dynamique du mouvement en cours s'accélère-t-elle ou s'essoufle-t-elle ? »}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Catégorie :} Indicateur de \textbf{momentum} (mesure la vitesse et l'accélération du mouvement)
+
+\vspace{0.2cm}
+\noindent
+Le \textbf{MACD} se construit à partir de l'écart entre deux moyennes mobiles exponentielles de périodes différentes :
+\[
+\text{MACD}_t = EMA_{12,t} - EMA_{26,t}
+\]
+
+\noindent
+où $EMA_{12}$ est une exponentielle sur 12 jours (réactive) et $EMA_{26}$ est une exponentielle sur 26 jours (moins réactive).
+
+\vspace{0.2cm}
+\noindent
+Une \textbf{ligne de signal} est ensuite calculée comme une exponentielle du MACD lui-même :
+\[
+\text{Signal}_t = EMA_{9}(\text{MACD})
+\]
+
+\noindent
+et l'écart entre les deux est représenté sous forme d'\textbf{histogramme} :
+\[
+\text{Histogramme}_t = \text{MACD}_t - \text{Signal}_t
+\]
+
+\vspace{0.2cm}
+\noindent
+\textbf{Implémentation :} Les trois séries (MACD, Signal, Histogramme) sont calculées à titre de \textit{traceback} mais seul le \textbf{MACD vs Signal} est utilisé comme signal actionnel. Les trois sont marqués \texttt{VALID} seulement après 35 observations consécutives (correspondant à $26 + 9 = 35$ jours minimum pour que la chaîne d'exponentielles se stabilise).
+
+\vspace{0.2cm}
+\noindent
+\textbf{Interprétation :}
+\begin{itemize}
+    \item \textbf{Croisement haussier} (MACD passe au-dessus du Signal) : accélération de la dynamique haussière → signal d'achat potentiel ;
+    \item \textbf{Croisement baissier} (MACD passe sous le Signal) : ralentissement de la dynamique haussière ou inversion → signal de vente potentiel ;
+    \item \textbf{Divergence haussière} : le cours atteint un nouveau sommet, mais le MACD n'en fait pas autant → l'élan haussier s'affaiblit, possible inversion ;
+    \item \textbf{Divergence baissière} : le cours atteint un nouveau creux, mais le MACD n'en fait pas autant → l'élan baissier s'affaiblit, possible rebond.
+\end{itemize}
+
+\noindent
+\textbf{Limitation :} Le MACD est \textit{lagging} — il confirme une tendance après qu'elle soit amorcée, mais génère rarement des signaux \textit{avant} l'inversion réelle. Un croisement haussier du MACD survient généralement quelques jours après que la hausse a déjà commencé.
+
+\subsection{RVOL (Relative Volume)}
+
+\noindent
+\textbf{Question traitée :} \textit{« La pression acheteuse/vendeuse observée sur le prix est-elle réellement soutenue par un volume d'échange anormal ? »}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Catégorie :} Indicateur de \textbf{volume} (confirmation de la fiabilité d'un mouvement)
+
+\vspace{0.2cm}
+\noindent
+Le \textbf{RVOL} (ou \textit{On-Balance Volume Ratio}) est le rapport entre le volume d'une journée donnée et la moyenne mobile du volume sur les $n$ jours précédents :
+\[
+RVOL_t = \frac{\text{Volume}_{t}}{SMA_{n}(\text{Volume})}
+\]
+
+\noindent
+Par exemple, avec $n=20$, le RVOL mesure comment le volume d'aujourd'hui se compare à la moyenne des 20 derniers jours.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Implémentation :} Une fenêtre de $n = 20$ jours est utilisée. Le RVOL commence à être valide à partir du jour 20 (première SMA complète), mais la pratique montre que des valeurs significatives existent dès quelques jours (mode \textit{graceful degradation}).
+
+\vspace{0.2cm}
+\noindent
+\textbf{Zones d'interprétation :}
+\begin{itemize}
+    \item \textbf{RVOL > 1.5} : volume très forte — un volume 1.5× plus important que la normale — confirme qu'un mouvement de prix a une \textbf{conviction forte} derrière lui (les investisseurs achètent/vendent réellement) ;
+    \item \textbf{1.0 ≤ RVOL ≤ 1.5} : volume normal à légèrement élevé ;
+    \item \textbf{0.5 ≤ RVOL < 1.0} : volume faible — un mouvement de prix accompagné d'un volume inférieur à la normale est souvent superficiel, peut se revenir ;
+    \item \textbf{RVOL < 0.5} : volume très faible — presque pas d'échange ; le mouvement est extrêmement peu fiable.
+\end{itemize}
+
+\noindent
+\textbf{Rôle du RVOL dans le moteur :} Le RVOL n'est jamais un signal standalone. Il agit comme un \textbf{filtre de confirmation} : un signal de prix (tendance, momentum) accompagné d'un RVOL faible est marqué comme \textit{faible confiance} ; un même signal avec RVOL > 1.5 renforce la confiance.
+
+\subsection{VWAP (Volume Weighted Average Price)}
+
+\noindent
+\textbf{Question traitée :} \textit{« Le prix d'aujourd'hui est-il au-dessus ou au-dessous du prix moyen pondéré par les volumes depuis le début de la période ? »}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Catégorie :} Indicateur \textbf{hybride} (prix + volume)
+
+\vspace{0.2cm}
+\noindent
+Le \textbf{VWAP} mesure le prix moyen pondéré par le volume, cumulé depuis le début des données disponibles pour le titre :
+\[
+VWAP_t = \frac{\sum_{i=1}^{t} (\text{Cours}_i \times \text{Volume}_{MC,i})}{\sum_{i=1}^{t} \text{Volume}_{MC,i}}
+\]
+
+\noindent
+À titre d'exemple, si un titre a été acheté massivement à 50 MAD (gros volume) puis peu échangé à 55 MAD (volume faible), le VWAP reste proche de 50, car le prix lourd (50) pondère plus que le prix léger (55).
+
+\vspace{0.2cm}
+\noindent
+\textbf{Implémentation :} La somme est entièrement cumulative (depuis le premier jour) — pas de fenêtre glissante. À titre de contexte, le VWAP dans les données réelles produirait un VWAP qui dérive lentement vers le prix moyen actuel, mais avec une inertie importante vis-à-vis des anciens prix massifs.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Interprétation :} Un cours situé \textbf{au-dessus du VWAP} indique que les acheteurs sont disposés à payer plus cher que la moyenne historique pondérée — signal haussier. Un cours \textbf{en dessous du VWAP} indique le contraire — signal baissier.
+
+\noindent
+\textbf{Limitation :} En données quotidiennes sans intraday, le VWAP perd un peu de sa puissance (il est conçu pour le trading intraday). Cependant, dans le contexte d'une gestion quarterly/mensuelle, il offre toujours une référence utile.
+
+\subsection{HV (Historical Volatility)}
+
+\noindent
+\textbf{Question traitée :} \textit{« Le titre est-il actuellement dans un régime de faible ou de forte variabilité des prix ? »}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Catégorie :} Indicateur de \textbf{risque/contexte} (pas directionnellement bullish ou bearish)
+
+\vspace{0.2cm}
+\noindent
+La \textbf{Volatilité Historique} mesure la variabilité des retours logarithmiques du cours, annualisée pour faciliter la comparaison avec les taux de marché et les attentes annuelles de rendement :
+\[
+HV = \sqrt{\frac{1}{n-1} \sum_{i=1}^{n} \left(\ln\frac{C_i}{C_{i-1}} - \overline{\ln\frac{C}{C_\text{prev}}}\right)^2} \times \sqrt{252}
+\]
+
+\noindent
+où:
+\begin{itemize}
+    \item $\ln\frac{C_i}{C_{i-1}}$ est le retour logarithmique (approximation continue du retour simple) ;
+    \item $n=20$ est la fenêtre (20 jours = ~1 mois de trading) ;
+    \item $\sqrt{252}$ annualise la volatilité quotidienne (252 jours de trading par an en moyenne).
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Implémentation :} La HV-20 est calculée pour chaque jour disposant d'au moins 21 observations consécutives (20 déltas + 1). Pour les dates antérieures, HV = NaN.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Interprétation :}
+\begin{itemize}
+    \item \textbf{HV < 20\%} : volatilité faible — le titre varie peu d'un jour à l'autre ; régime stable ;
+    \item \textbf{20\% ≤ HV ≤ 40\%} : volatilité normale pour les actions marocaines ;
+    \item \textbf{HV > 40\%} : volatilité élevée — le titre varie fortement ; régime turbulent.
+\end{itemize}
+
+\noindent
+\textbf{Rôle du HV dans le moteur :} La HV n'entre \textbf{pas} directement dans le calcul du score de direction (Overall\_Score). À la place, elle rentre dans le calcul de \textbf{Confiance} (Confidence) : une volatilité anormalement élevée (au-delà du 75e percentile de l'univers des titres) réduit la confiance dans le signal généré, car le titre est trop imprévisible pour permettre une décision fiable.
+
+\noindent
+\textbf{Rationale :} Un titre très volatil peut techniquement avoir un excellent signal (score = 80), mais comme il est aussi extrêmement imprévisible, la confiance reste basse (p.ex. 35\%). Le gestionnaire sait alors : « Signal haussier, mais très incertain — approcher avec prudence. »
+
+\subsection{Synthèse des 7 indicateurs implémentés}
+
+\noindent
+Le tableau \ref{tab:indicateurs-synthese} résume les 7 indicateurs techniques intégrés au moteur de décision, leur catégorie, leur question centrale et leur condition d'activité.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lllp{4cm}l}
+\toprule
+\textbf{Indicateur} & \textbf{Catégorie} & \textbf{Fenêtre} & \textbf{Question} & \textbf{Min. obs.} \\
+\midrule
+SMA-20, SMA-50  & Tendance     & 20, 50 & Quelle est la tendance ? & 20, 50 \\
+EMA-20          & Tendance     & 20    & La tendance récente accélère-t-elle ? & 20 \\
+RSI-14          & Momentum     & 14    & Suracheté / survendu ? & 15 \\
+MACD            & Momentum     & 12,26 & La dynamique s'accélère-t-elle ? & 35 \\
+RVOL            & Volume       & 20    & Le volume confirme-t-il ? & 1 \\
+VWAP            & Prix-Volume  & Cumul & Au-dessus/sous la moyenne pondérée ? & 1 \\
+HV-20           & Risque       & 20    & Volatilité normale ou élevée ? & 21 \\
+\bottomrule
+\end{tabular}
+\caption{Résumé des 7 indicateurs techniques implémentés dans le DSS}
+\label{tab:indicateurs-synthese}
+\end{table}
+
+\noindent
+\textbf{Observation clé :} Les indicateurs n'opèrent PAS en vase clos. Ils sont organisés en 3 \textbf{familles}, chacune avec un rôle distinct :
+
+\begin{itemize}
+    \item \textbf{Famille Tendance} (SMA-20, SMA-50, EMA-20) : établit la direction générale du titre. Poids 35\% dans le score.
+    \item \textbf{Famille Momentum} (RSI-14, MACD) : valide l'intensité et la dynamique de cette direction. Poids 35\%.
+    \item \textbf{Famille Volume} (RVOL, VWAP) : confirme que la direction est portée par le volume. Poids 20\%.
+    \item \textbf{Contexte} (HV-20) : ajuste la confiance en cas de volatilité extrême. Poids 10\%, utilisé pour pénaliser la confiance, pas le score.
+\end{itemize}
+
+\section{Architecture du moteur de décision : de l'indicateur au score}
+\label{sec:architecture-moteur}
+
+\noindent
+Cette section documente l'architecture précise du moteur de décision implémenté, en explicitant comment les 7 indicateurs techniques produisent progressivement un score de direction (Overall\_Score) et un indice de confiance (Confidence) à partir desquels sont générées les recommandations BUY/HOLD/SELL.
+
+\noindent
+\textbf{Vue d'ensemble du flux de décision :} La figure \ref{fig:architecture-pipeline} illustre le cheminement complet des données à travers le moteur, des 7 indicateurs bruts jusqu'à la recommandation finale. Ce diagramme en cascade montre comment les signaux individuels s'agrègent en scores de famille, puis en score global et confiance, lesquels alimentent la logique de décision finale.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{logos/pipeline-mermaid-diagram.png}
+\caption{Architecture complète du moteur de décision : flux des données de 7 indicateurs à recommandation finale}
+\label{fig:architecture-pipeline}
+\end{figure}
+
+\noindent
+\textbf{Flot logique résumé :}
+
+\begin{enumerate}
+    \item **7 Indicateurs** calculent chacun une valeur numérique (SMA, RSI, MACD, etc.)
+    \item **Signalisation** convertit chaque indicateur en signal discret : +1 (haussier), 0 (neutre), -1 (baissier), ou NaN (données insuffisantes)
+    \item **3 Familles** agrègent les signaux par catégorie (Tendance, Momentum, Volume), produisant un score [0-100] pour chaque famille
+    \item **Score Global** combine les 3 scores de famille via poids fixes (35-35-20), produisant un **Overall\_Score** unique [0-100]
+    \item **Confiance** évalue indépendamment la qualité des données (couverture, consensus, risque volatilité), produisant une **Confiance** [0-100%]
+    \item **Logique de Décision** compare le duo (Score, Confiance) aux seuils et génère une recommandation : **BUY / HOLD / SELL / INSUFFICIENT\_DATA**
+\end{enumerate}
+
+\noindent
+\textbf{Points clés de ce design :}
+
+\begin{itemize}
+    \item **Séparation Score/Confiance :** Ces deux dimensions sont complètement indépendantes. Un score fort (80) avec confiance faible (35\%) génère HOLD, pas BUY. Ce design évite les faux positifs.
+    \item **Poids fixes (35-35-20) :** Tendance et Momentum reçoivent le même poids car tous deux capitaux ; Volume est secondaire. HV-20 pénalise la confiance, pas le score.
+    \item **Gating multiples :** 3 portes doivent être passées pour agir (score extrême + confiance ≥ 60% + couverture ≥ 50\%), ce qui filtre les signaux bruyants.
+\end{itemize}
+
+\subsection{Étape 1 : Signalisation individuelle (signal per indicator)}
+
+\noindent
+Chaque indicateur, pour chaque date et chaque titre, génère un \textbf{signal individuel} discret à trois valeurs :
+
+\begin{itemize}
+    \item \textbf{+1} : signal \textbf{haussier} (bullish)
+    \item \textbf{0} : signal \textbf{neutre} (neutral)
+    \item \textbf{-1} : signal \textbf{baissier} (bearish)
+    \item \textbf{NaN} : signal \textbf{indisponible} (insufficient data)
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+La règle de signalisation pour chaque indicateur s'énonce simplement :
+
+\vspace{0.3cm}
+\noindent
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Indicateur} & \textbf{Condition pour +1} & \textbf{Condition pour -1} \\
+\midrule
+SMA\_20 & Cours > SMA\_20 & Cours < SMA\_20 \\
+SMA\_50 & Cours > SMA\_50 & Cours < SMA\_50 \\
+EMA\_20 & Cours > EMA\_20 & Cours < EMA\_20 \\
+RSI\_14 & RSI < 30 (survente) & RSI > 70 (surachat) \\
+MACD & MACD > MACD\_Signal & MACD < MACD\_Signal \\
+RVOL & RVOL ≥ 1.5 (fort) & RVOL ≤ 0.5 (faible) \\
+VWAP & Cours > VWAP & Cours < VWAP \\
+\bottomrule
+\end{tabular}
+\caption{Règles de signalisation par indicateur}
+\label{tab:signal-rules}
+\end{table}
+
+\noindent
+\textbf{Note importante :} Un RSI entre 30 et 70 génère un signal neutre (0), pas NaN. De même, un RVOL entre 0.5 et 1.5 génère un signal neutre. Cette distinction est cruciale : le signal 0 signifie « pas de direction », tandis que NaN signifie « je ne sais pas / données manquantes ». Cela affecte directement le calcul des scores de famille.
+
+\subsection{Étape 2 : Scores de famille}
+
+\noindent
+Les 7 indicateurs sont regroupés en 3 \textbf{familles fonctionnelles}, reflétant leur rôle dans la décision :
+
+\vspace{0.3cm}
+\noindent
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Famille} & \textbf{Indicateurs} & \textbf{Interprétation} \\
+\midrule
+\textbf{Tendance} & SMA\_20, SMA\_50, EMA\_20 & Direction de base du titre \\
+\textbf{Momentum} & RSI\_14, MACD & Intensité et dynamique du mouvement \\
+\textbf{Volume} & RVOL, VWAP & Confirmation par le volume \\
+\bottomrule
+\end{tabular}
+\caption{Familles d'indicateurs et leurs rôles}
+\label{tab:families}
+\end{table}
+
+\noindent
+Pour chaque famille, un \textbf{score de famille} (compris entre 0 et 100) est calculé comme la moyenne des signaux individuels, après conversion de l'échelle [-1, +1] vers [0, 100] :
+
+\[
+\text{Score}_{\text{Famille}} = \frac{\left(\text{moyenne des signaux} + 1\right)}{2} \times 100
+\]
+
+\noindent
+Par exemple :
+\begin{itemize}
+    \item Si Tendance = [(+1) + (+1) + (0)] / 3 = +0.33, alors Score\_Tendance = (0.33 + 1)/2 × 100 = 66.5
+    \item Si Momentum = [(-1) + (0)] / 2 = -0.5, alors Score\_Momentum = (-0.5 + 1)/2 × 100 = 25
+    \item Si Volume = [(+1) + (+1)] / 2 = +1, alors Score\_Volume = (1 + 1)/2 × 100 = 100
+\end{itemize}
+
+\noindent
+\textbf{Comportement en présence de NaN :} Les indicateurs avec signal NaN (données insuffisantes) sont \textbf{exclus} du calcul de moyenne de la famille. Si TOUS les indicateurs d'une famille ont NaN, le score de famille est NaN.
+
+\subsection{Étape 3 : Score global (Overall\_Score)}
+
+\noindent
+Le \textbf{score global} combine les 3 scores de famille via une moyenne pondérée fixe :
+
+\[
+\text{Overall\_Score} = \frac{w_T \times \text{Score}_{\text{Tendance}} + w_M \times \text{Score}_{\text{Momentum}} + w_V \times \text{Score}_{\text{Volume}}}{w_T + w_M + w_V}
+\]
+
+\noindent
+où les poids par défaut sont :
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Famille} & \textbf{Poids} \\
+\midrule
+Tendance & $w_T$ = 0.35 \\
+Momentum & $w_M$ = 0.35 \\
+Volume   & $w_V$ = 0.20 \\
+\bottomrule
+\end{tabular}
+\caption{Poids des familles dans le score global}
+\label{tab:weights}
+\end{table}
+
+\noindent
+\textbf{Rationale des poids :}
+\begin{itemize}
+    \item \textbf{35\% Tendance} : La direction est l'information primaire ; sans elle, aucune décision n'a de sens.
+    \item \textbf{35\% Momentum} : L'intensité du mouvement est aussi importante que sa direction ; un signal de tendance baissière confirmé par un MACD/RSI faible n'est pas fiable.
+    \item \textbf{20\% Volume} : La confirmation par le volume prime sur les deux premiers, mais demeure secondaire ; beaucoup de mouvements significatifs ont lieu sur volume faible.
+    \item \textbf{10\% Risque (HV)} : N'entre \textbf{pas} dans le score, mais dans la confiance (voir section suivante).
+\end{itemize}
+
+\noindent
+\textbf{Note méthodologique :} Ces poids sont des \textbf{hypothèses initiales} issues d'expertise métier, pas des valeurs scientifiquement validées. La section \ref{sec:blueprint} mentionne que 5 configurations alternatives (A–E) sont à évaluer lors de backtesting pour valider ces poids.
+
+\noindent
+\textbf{Comportement en présence de données manquantes :} Le dénominateur est recalculé pour inclure seulement les familles ayant au moins un score valide. Par exemple, si Score\_Tendance = NaN mais Score\_Momentum et Score\_Volume sont valides, seuls les poids de Momentum et Volume sont utilisés.
+
+\subsection{Étape 4 : Score de confiance (Confidence)}
+
+\noindent
+\textbf{Point crucial :} Le score de confiance est \textbf{TOTALEMENT INDÉPENDANT} du Overall\_Score. Il mesure la \textbf{qualité des données}, pas la direction du signal. Deux combinaisons illustrent cette distinction :
+
+\vspace{0.3cm}
+\noindent
+\textit{Scénario A :} Score = 85 (fortement haussier), Confiance = 35\% (faible)
+\newline
+→ Interprétation : « Signal haussier, mais données sparse ou familles en désaccord. Approcher avec extrême prudence. »
+
+\vspace{0.2cm}
+\noindent
+\textit{Scénario B :} Score = 52 (neutre), Confiance = 89\% (fort)
+\newline
+→ Interprétation : « Pas de direction claire, mais données d'excellente qualité. Signal fiable : « pas de mouvement attendu ». »
+
+\vspace{0.3cm}
+\noindent
+Le score de confiance combine \textbf{trois composantes} :
+
+\vspace{0.2cm}
+\noindent
+\textbf{A. Data Coverage (40\%)} : fraction des indicateurs obligatoires avec statut VALID
+
+\noindent
+L'ensemble minimum d'indicateurs est : SMA\_20, SMA\_50, EMA\_20, RSI\_14, MACD, RVOL, VWAP (7 indicateurs). Le HV\_20 n'est pas compté car il rentre séparément en pénalité. La couverture est donc :
+
+\[
+\text{Coverage} = \frac{\#\{\text{indicateurs avec statut VALID}\}}{7}
+\]
+
+\noindent
+Par exemple : si 5 des 7 ont VALID, alors Coverage = 5/7 ≈ 71.4\%.
+
+\vspace{0.3cm}
+\noindent
+\textbf{B. Family Agreement (40\%)} : consensus sur la direction entre les trois familles
+
+\noindent
+Cette composante capture le degré d'accord entre Tendance, Momentum et Volume sur le sens (haussier vs baissier). Elle est calculée comme la \textit{majorité relative} des familles :
+
+\[
+\text{Agreement} = \frac{\max(\text{bullish\_count}, \text{bearish\_count})}{\text{total\_families\_with\_valid\_scores}}
+\]
+
+\noindent
+où :
+\begin{itemize}
+    \item \textbf{bullish\_count} = nombre de familles avec Score > 50
+    \item \textbf{bearish\_count} = nombre de familles avec Score < 50
+    \item \textbf{neutral} (Score = 50) compte zéro dans les deux
+\end{itemize}
+
+\noindent
+Par exemple :
+\begin{itemize}
+    \item Tendance = 72 (haussier), Momentum = 68 (haussier), Volume = 45 (baissier) → 2 haussier, 1 baissier → Agreement = 2/3 ≈ 67\%
+    \item Tendance = 52 (quasi-neutre), Momentum = 48 (quasi-neutre), Volume = 50 (neutre) → 0 haussier, 0 baissier → Agreement = 0/3 = 0\%
+\end{itemize}
+
+\vspace{0.3cm}
+\noindent
+\textbf{C. Risk Penalty (20\%)} : pénalité lorsque la volatilité est anormalement élevée
+
+\noindent
+Un titre avec volatilité HV anormalement élevée (au-delà du 75e percentile de l'univers) est intrinsèquement imprévisible, ce qui réduit la confiance même si les données sont complètes et les familles d'accord. La pénalité est calculée comme :
+
+\[
+\text{Risk\_Penalty} = \min\left(0.3, \max\left(0.0, \frac{HV - HV_{p75}}{HV_{p75}}\right)\right)
+\]
+
+\noindent
+si HV est disponible. Cette pénalité est un nombre entre 0 et 0.3 (maximum 30\% de réduction de confiance), qui réduit le poids alloué au volet « absence de risque ».
+
+\vspace{0.3cm}
+\noindent
+\textbf{Assemblage final :}
+
+\[
+\text{Confidence} = \left( \text{Coverage} \times 0.40 + \text{Agreement} \times 0.40 + (1 - \text{Risk\_Penalty}) \times 0.20 \right) \times 100\%
+\]
+
+\noindent
+Par exemple :
+\begin{itemize}
+    \item Coverage = 0.71 (5/7), Agreement = 0.67 (2/3), Risk\_Penalty = 0.10
+    \item Confidence = (0.71 × 0.40 + 0.67 × 0.40 + 0.90 × 0.20) × 100 = (0.284 + 0.268 + 0.18) × 100 = 73.2\%
+\end{itemize}
+
+\section{Blueprint de mise en \oe uvre : de la donnée à la décision}
+\label{sec:blueprint}
+
+\noindent
+Sur la base des éléments présentés dans ce chapitre, cette section propose un cadre complet et précis de mise en \oe uvre du système d'aide à la décision, en explicitant les seuils de décision, le flux global du moteur et les critères de sortie.
+
+\subsection{Flux du pipeline : 5 étapes du brut à la recommandation}
+
+\noindent
+Le pipeline traite les données en 5 étapes strictement séquentielles :
+
+\begin{enumerate}
+    \item \textbf{Ingestion et nettoyage des données.} Le gestionnaire télécharge deux fichiers Excel :
+        \begin{itemize}
+            \item Fichier 1 : \textbf{Données marché} — colonnes Cours, Bid, Ask, Volume MC, Quantité MC, Date. Une ligne par date et par titre.
+            \item Fichier 2 : \textbf{Composition d'indice} — colonne Facteur flottant (FF), Capitalisation flottante, Poids, Nombre de titres, Code ISIN.
+        \end{itemize}
+        Le pipeline normalise les deux fichiers, fusionne sur CODE\_ISIN, et crée une table unifiée « investable ».
+    
+    \item \textbf{Filtrage dynamique de l'univers.} Sur la base de la composition d'indice téléchargée, les seuils de filtrage sont recalculés. Trois portes d'admission :
+        \begin{itemize}
+            \item Porte 1 : Le titre appartient-il à l'indice sélectionné ? (MASI, MADEX, etc.)
+            \item Porte 2 : Facteur flottant ≥ 0.20 ? (au moins 20\% des titres librement négociables)
+            \item Porte 3 : Capitalisation flottante ≥ p25 de l'indice ? (au-delà du 1er quartile)
+        \end{itemize}
+        Les titres qui passent les 3 portes constituent l'\textit{univers investable}. Les autres sont marqués EXCLUDED avec la raison.
+    
+    \item \textbf{Calcul des indicateurs.} Pour chaque titre de l'univers investable, les 10 indicateurs sont calculés sur l'intégralité de l'historique disponible. Chaque indicateur reçoit un statut VALID ou INSUFFICIENT\_DATA selon le nombre minimum d'observations requis. Les indicateurs sont stockés comme colonnes de la table.
+    
+    \item \textbf{Signalisation et scoring.} Les signaux individuels (+1/0/-1) sont dérivés des indicateurs selon les règles du tableau \ref{tab:signal-rules}. Les scores de famille, le score global et la confiance sont calculés selon les formules des sections \ref{sec:architecture-moteur}. Les trois scores sont stockés comme colonnes.
+    
+    \item \textbf{Génération des recommandations.} Le triplet (Overall\_Score, Confidence, Data\_Coverage) est comparé aux seuils de décision (Tableau \ref{tab:decision-thresholds}). Une recommandation unique (BUY / HOLD / SELL / INSUFFICIENT\_DATA) est générée pour chaque titre. Les recommandations sont agrégées au niveau du portefeuille (nombre total de BUY, HOLD, SELL, INSUFFICIENT).
+\end{enumerate}
+
+\subsection{Seuils de décision : portes vers BUY / HOLD / SELL}
+
+\noindent
+Les décisions sont générées selon une \textbf{logique de portes successives} :
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{3cm}cccl}
+\toprule
+\textbf{Seuil} & \textbf{Score} & \textbf{Confiance} & \textbf{Coverage} & \textbf{Décision} \\
+\midrule
+Coverage < 50\%        & — & — & < 50\% & INSUFFICIENT\_DATA \\
+Score ≥ 60 ET Conf ≥ 60\% & ≥ 60 & ≥ 60 & — & BUY \\
+Score ≤ 40 ET Conf ≥ 60\% & ≤ 40 & ≥ 60 & — & SELL \\
+Tous autres cas        & 40–60 & — & — & HOLD \\
+\bottomrule
+\end{tabular}
+\caption{Seuils de décision (configuration de base)}
+\label{tab:decision-thresholds}
+\end{table}
+
+\noindent
+En pseudo-code :
+
+\begin{minted}{python}
+if coverage < 0.50:
+    decision = 'INSUFFICIENT_DATA'
+elif score >= 60 and confidence >= 60:
+    decision = 'BUY'
+elif score <= 40 and confidence >= 60:
+    decision = 'SELL'
+else:
+    decision = 'HOLD'
+\end{minted}
+
+\noindent
+\textbf{Observations clés :}
+\begin{itemize}
+    \item \textbf{Gating par couverture de données :} Si moins de 50\% des 7 indicateurs obligatoires sont valides, aucune décision n'est produite, indépendamment du score/confiance calculés. Cette porte existe pour éviter de décider sur des données très incomplètes.
+    \item \textbf{Confiance comme seuil d'action :} Pour générer un BUY ou SELL, la confiance doit être ≥ 60\%. Cela signifie qu'un Score = 75 seul (sans confiance suffisante) génère HOLD, pas BUY. C'est un design intentionnel : on n'agit que sur des signaux de haute qualité.
+    \item \textbf{Asymétrie : BUY et SELL ont les mêmes exigences de confiance.} Les deux exigent Confiance ≥ 60\%. Cela reflète un choix métier : il faut autant de prudence pour acheter que pour vendre.
+\end{itemize}
+
+\subsection{Résumé à la date la plus récente}
+
+\noindent
+À la fin du pipeline, une table de synthèse \textbf{Summary} est générée, résumant la recommandation la plus récente pour chaque titre :
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lllllll}
+\toprule
+\textbf{Code ISIN} & \textbf{Société} & \textbf{Cours} & \textbf{Score} & \textbf{Confiance} & \textbf{Décision} & \textbf{Signaux} \\
+\midrule
+MAR1234 & AFMA & 92.5 & 74.2 & 78\% & BUY & EMA↑ RSI↑ VWAP↑ \\
+MAR5678 & IAM & 48.1 & 52.3 & 65\% & HOLD & — \\
+MAR9012 & BCP & 34.7 & 28.5 & 71\% & SELL & EMA↓ RSI↓ \\
+\bottomrule
+\end{tabular}
+\caption{Exemple de résumé de recommandations (format final)}
+\label{tab:summary-example}
+\end{table}
+
+\noindent
+Cette table est exposée via l'interface Streamlit et peut être téléchargée en CSV pour import dans les outils d'exécution interne de la CMR.
+
+\subsection{Statut de validation : hypothèse de base avant backtesting}
+
+\noindent
+\textbf{IMPORTANT :} Tous les seuils et poids spécifiés dans cette section (Overall\_Score ≥ 60 pour BUY, etc.) sont des \textbf{hypothèses initiales issues d'expertise métier}, pas des valeurs \textbf{scientifiquement validées}. Selon le plan du stage :
+
+\begin{itemize}
+    \item \textbf{Actuel (août 2026)} : Implémentation MVP avec seuils de base.
+    \item \textbf{Notebook 12 (backtest)} : Ces seuils seront testés sur données historiques (juillet 2024 — août 2026).
+    \item \textbf{Post-backtesting} : Les seuils seront ajustés si les résultats montrent une performance insuffisante (hit rate < 55\%, Sharpe < 1.0, etc.).
+\end{itemize}
+
+\noindent
+Jusqu'à cette validation, l'étiquette « BASELINE\_HYPOTHESIS » accompagne tous les paramètres.
+
+\section{Évaluation et limitations : vers une production robuste}
+\label{sec:limitations}
+
+\noindent
+Cette section documente les limitations identifiées au cours du développement du prototype et propose des pistes d'amélioration pour une future intégration en production.
+
+\subsection{Contraintes de temps et de ressources}
+
+\noindent
+Le stage d'ingénieur adjoint s'est déroulé sur une période réduite (environ 8 semaines de juillet à septembre 2026), ce qui a imposé des arbitrages importants dans la portée du projet :
+
+\begin{itemize}
+    \item \textbf{Profondeur d'analyse technique :} Seuls 7 indicateurs ont pu être implémentés et testés, parmi la trentaine existant dans la littérature financière. Des indicateurs comme les bandes de Bollinger, le Stochastique, l'ADXDMI auraient enrichi le moteur de décision, mais n'ont pas pu être intégrés dans le délai.
+    
+    \item \textbf{Backtesting complet :} Bien que la méthodologie de backtesting soit documentée (Notebook 12), les tests systématiques sur l'ensemble des configurations alternatives (poids A–E, seuils de décision sur grille 4×4×4) n'ont pas pu être complétés. Le système fonctionne sur seuils initiaux, à valider rétroactivement.
+    
+    \item \textbf{Données de marché :} L'univers d'entraînement inclut seulement 28 séances (juillet 2026) d'historique quotidien. Pour une validation robuste, 2–3 années d'historique seraient préférables. La CMR dispose de telles données en interne, mais leur extraction et normalisation n'a pas pu être menée à bien dans les délais.
+    
+    \item \textbf{Interface utilisateur :} L'interface Streamlit est minimaliste mais fonctionnelle. Des améliorations UX (dashboards interactifs, graphiques temps réel, alertes de décision) pourraient être ajoutées.
+\end{itemize}
+
+\subsection{Limitations méthodologiques}
+
+\noindent
+\subsubsection*{(1) Hypothèse de stationnarité}
+
+\noindent
+L'analyse technique suppose implicitement que les patterns passés se reproduisent dans le futur — une hypothèse sous-jacente de \textit{stationnarité statistique}. Or, les marchés financiers connaissent des changements structurels (changements de régime, chocs exogènes) qui violent cette stationnarité. Un exemple concret : les règles de court-selling instaurées à la BVC en 2023 ont modifié la dynamique des prix — les seuils et poids de décision calibrés avant ce changement peuvent être obsolètes après.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Piste d'amélioration :} Mettre en place un mécanisme de détection de changement de régime (CUSUM test, Chow test) et recalibrer automatiquement les seuils si un changement est détecté.
+
+\subsubsection*{(2) Absence de modélisation du microstructure de marché}
+
+\noindent
+Le système ne prend pas en compte les spécificités de la BVC comme microstructure :
+\begin{itemize}
+    \item \textbf{Circuit-breaker :} Les suspensions automatiques de cotation à ±6\% n'influencent pas la génération de signaux. Un titre en état « Réservé » continuera de générer des signaux, même s'il ne peut pas être tradé.
+    \item \textbf{Liquidité intraday :} Le système ne distingue pas les titres en continu des titres en fixing. Un signal SELL sur un titre en multifixing ne peut pas être exécuté immédiatement.
+    \item \textbf{Impact de prix :} Le système ne modélise pas le glissement de prix (slippage) ni l'impact d'une grosse commande sur le carnet. Un signal BUY pour 1 million de titres d'une microcap peut déplacer le cours de 5–10\%.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Piste d'amélioration :} Intégrer un module « order execution simulator » qui évalue l'impact de marché avant transmission. Filtrer les signaux sur titres à liquidité insuffisante pour l'ordre envisagé.
+
+\subsubsection*{(3) Absence de contrôle de risque (allocation) et de coûts de transaction}
+
+\noindent
+Le système génère des recommandations BUY/SELL/HOLD, mais ne gère pas :
+\begin{itemize}
+    \item \textbf{Allocation de portefeuille :} Un signal BUY ne dit pas « combien acheter ». Les décisions d'allocation (combien de MAD investir par titre, cible de poids) restent du ressort du gestionnaire.
+    \item \textbf{Coûts de courtage et TTB :} Le moteur ne déduit pas les 0.08\% de commission ni la TTB (0.15\% en buy, 0.15\% en sell) du calcul de rentabilité. Ces coûts réduisent significativement le retour net, surtout pour les petits ordres.
+    \item \textbf{Limites de concentration :} Aucun contrôle de limites de concentration sectorielle ou par émetteur (p.ex. « pas plus de 10\% en Banques »).
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Piste d'amélioration :} Intégrer un module de post-traitement des signaux qui :
+\begin{itemize}
+    \item Calcule les coûts de transaction au format d'exécution (limite/market/stop).
+    \item Applique une optimisation moyenne-variance (Markowitz) pour allouer entre les signaux BUY.
+    \item Simule la performance nette, post-coûts et post-imposition.
+\end{itemize}
+
+\subsubsection*{(4) Absence de gestion des positions actives}
+
+\noindent
+Le système évalue chaque titre indépendamment, au dernier jour d'historique disponible. Il ignore :
+\begin{itemize}
+    \item \textbf{Positions actuelles du portefeuille :} Si le portefeuille détient déjà 50\% dans Attijariwafa Bank et le moteur génère un BUY, doit-on vraiment ajouter ? Les décisions devraient dépendre de l'exposition actuelle.
+    \item \textbf{Hold vs. Take-Profit / Stop-Loss :} Un titre acheté il y a 3 mois peut générer un signal SELL aujourd'hui, mais cela peut être un faux signal. Un contexte de position aiderait à distinguer « sortir d'une position gagnante » vs « couper une perte ».
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Piste d'amélioration :} Intégrer un module de gestion de positions (P\&L tracking, latency analysis) et adapter les seuils de décision selon l'état des positions.
+
+\subsection{Limitations liées à la qualité et volume des données}
+
+\noindent
+\subsubsection*{(5) Historique court et univers restreint}
+
+\noindent
+Le prototype a été validé sur :
+\begin{itemize}
+    \item \textbf{Profondeur temporelle :} ~28 séances (juillet 2026) vs. 2–3 ans recommandés.
+    \item \textbf{Couverture d'univers :} Environ 79 titres MASI vs. 250+ dans la base de données complète de la BVC (MADEX, OTC, obligations).
+\end{itemize}
+
+\noindent
+Cela limite la robustesse des conclusions. Un système entraîné sur 1 mois peut overfitter aux patterns spécifiques de ce mois et échouer en septembre.
+
+\vspace{0.2cm}
+\noindent
+\textbf{Piste d'amélioration :} Dès que possible, étendre l'historique à 3 ans minimum, et ré-évaluer les seuils trimestriellement avec rolling validation (train period, validation period, test period).
+
+\subsubsection*{(6) Données manquantes et imputations ad hoc}
+
+\noindent
+Le système utilise le statut VALID/INSUFFICIENT\_DATA pour gérer les valeurs NaN. Cependant :
+\begin{itemize}
+    \item \textbf{Lacunes sans explications :} Un indicateur NaN peut refléter soit une donnée manquante (pas fournie par la source), soit un calcul impossible (p.ex. RSI sans 14 jours de retours consécutifs). Le système ne distingue pas ces deux cas.
+    \item \textbf{Absence d'imputation :} Contrairement à certains systèmes, aucune forward-fill ni interpolation n'est pratiquée. Un cours manquant pour un jour reste manquant. Cela est conservateur mais peut réduire la disponibilité des indicateurs.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Piste d'amélioration :} Implémenter un processus d'imputation intelligent (interpolation spline pour petites lacunes, forward-fill avec horizon limité, drop de titre si lacune > 10 jours).
+
+\subsection{Opportunités d'amélioration future}
+
+\noindent
+\subsubsection*{(A) Élargissement de la palette technique}
+
+\noindent
+Indicateurs à intégrer lors de futures itérations :
+\begin{itemize}
+    \item \textbf{Bandes de Bollinger :} Capture la volatilité intrinsèque et offre des niveaux de support/résistance dynamiques.
+    \item \textbf{Ichimoku Cloud :} Synthèse en une seule visualisation de tendance, support, résistance et momentum. Très utilisé en trading asiatique.
+    \item \textbf{ADX (Average Directional Index) :} Mesure la force de la tendance indépendamment de sa direction — complément utile au RSI.
+    \item \textbf{On-Balance Volume (OBV) :} Accumulation/distribution cumulative du volume, plus sensible au timing que le RVOL.
+    \item \textbf{Relative Rotation Graphs (RRG) :} Comparaison simultanée de plusieurs ratios de relative performance, utile pour la sélection cross-sectionnelle.
+\end{itemize}
+
+\subsubsection*{(B) Machine Learning et optimisation adaptative}
+
+\noindent
+\begin{itemize}
+    \item \textbf{Apprentissage en ligne :} Plutôt que de fixer les poids et seuils, utiliser des algorithmes de ML (gradient descent, reinforcement learning) pour apprendre les poids optimaux sur rolling windows de données.
+    \item \textbf{Ensemble methods :} Combiner plusieurs estimateurs (Random Forest, Gradient Boosting, Neural Networks) plutôt que d'utiliser une moyenne arithmétique simple.
+    \item \textbf{Hyperparameter tuning automatisé :} Grid search / Bayesian optimization pour trouver les meilleures fenêtres d'indicateurs (SMA-15 vs SMA-20 vs SMA-25 ?).
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent
+\textbf{Mise en garde :} L'ajout de ML risque d'augmenter la complexité et les risques d'overfitting. À aborder avec prudence, en parallèle du système déterministe actuel, pour validation comparative.
+
+\subsubsection*{(C) Intégration de données externes}
+
+\noindent
+\begin{itemize}
+    \item \textbf{Sentiment de marché :} Scraper les forums boursiers marocains ou les réseaux sociaux pour évaluer le sentiment des investisseurs sur chaque titre.
+    \item \textbf{Annonces d'entreprises :} Flux de news en temps réel (résultats, dividendes, M\&A). Un indicateur technique en hausse couplé à une annonce positive renforce le signal.
+    \item \textbf{Données macroéconomiques :} Taux directeur BCM, inflation, spreads credit — un contexte macro baissier peut inverser un signal technique haussier sur un titre.
+    \item \textbf{Corrélations inter-titres :} Modifier les poids des signaux basés sur les corrélations (un signal sur Attijariwafa Bank affecte-t-il BMCE ?).
+\end{itemize}
+
+\subsubsection*{(D) Amélioration de la compréhensibilité (Explainability)}
+
+\noindent
+\begin{itemize}
+    \item \textbf{Décomposition d'une décision :} Pour chaque titre, expliquer en langage naturel pourquoi BUY a été choisi. P.ex. : « BUY car : (1) prix > SMA-20/50 (tendance haussière) (2) RSI < 30 (survente, rebond potentiel) (3) MACD > Signal (momentum positif) ».
+    \item \textbf{Scorecard avec graphiques :} Afficher un carnet de bord pour chaque titre avec sparklines des 7 indicateurs et leurs signaux.
+    \item \textbf{Robustness check :} Montrer comment la décision changerait si on modifiait les seuils (sensitivity analysis). « Si seuil BUY passe à 65 au lieu de 60, ce titre resterait BUY ? »
+\end{itemize}
+
+\subsection{Conclusion : de MVP à production}
+
+\noindent
+Le système actuel (août 2026) est un \textbf{MVP (Minimum Viable Product)} fonctionnel et documented, mais non validé en production. Les prochaines étapes clés sont :
+
+\begin{enumerate}
+    \item \textbf{Backtesting complet} (Notebook 12) : Tester les seuils actuels sur 2–3 ans d'historique réel. Objectif : Sharpe > 1.0, hit rate > 55\%.
+    \item \textbf{Optimisation des hyperparamètres} : Grid search sur poids (Trend/Momentum/Volume) et seuils (BUY score, confiance min). Valider sur période holdout.
+    \item \textbf{Mise en production pilote} : Déployer en read-only d'abord. Gestionnaires reçoivent les signaux mais ne les exécutent pas. Mesurer l'accuracy réelle vs. backtesting.
+    \item \textbf{Détection de drift} : Monitorer les métriques de performance mensuellement. Si Sharpe chute < 0.8 deux mois consécutifs, déclencher un recalibrage.
+    \item \textbf{Intégration métier complète} : Lier le DSS à l'OMS (Order Management System) CMR pour exécution automatisée, avec cutoffs de risque et limites de concentration.
+\end{enumerate}
+
+\noindent
+Jusqu'à cette validation complète, les recommandations du système doivent être traitées comme un \textit{support à la décision}, pas une \textit{décision automatisée}. Le gestionnaire conserve toujours le dernier mot.
+
+% ================= BIBLIOGRAPHIE =================
+\chapter*{Bibliographie}
+\phantomsection
+\addcontentsline{toc}{chapter}{Bibliographie}
+
+\begin{thebibliography}{99}
+
+\bibitem{cmr-site}
+Caisse Marocaine des Retraites, \textit{Portail public CMR}. Disponible sur : \url{www.cmr.gov.ma/} (consulté en 2026).
+
+\bibitem{ammc-seuils}
+Autorité Marocaine du Marché des Capitaux (AMMC), \textit{Le seuil de variation}. Disponible sur : \url{https://www.ammc.ma/fr/seuil-de-variation} (consulté en 2026).
+
+\bibitem{ammc-seance}
+Autorité Marocaine du Marché des Capitaux (AMMC), \textit{Modalités pratiques d'une séance boursière}. Disponible sur : \url{https://www.ammc.ma/fr/espace-epargnants/modalites-pratiques-dune-seance-boursiere} (consulté en 2026).
+
+\bibitem{ammc-bvc}
+Autorité Marocaine du Marché des Capitaux (AMMC), \textit{Société Gestionnaire de la Bourse : Bourse de Casablanca}. Disponible sur : \url{https://www.ammc.ma/fr/espace-epargnants/societe-gestionnaire-de-la-bourse-bourse-de-casablanca} (consulté en 2026).
+
+\bibitem{bvc-site}
+Bourse de Casablanca, \textit{Site officiel}. Disponible sur : \url{https://www.casablanca-bourse.com/} (consulté en 2026).
+
+\bibitem{loi-cmr-1996}
+Royaume du Maroc, \textit{Loi n° 43-95 relative à la Caisse Marocaine des Retraites}, promulguée par le Dahir du 7 août 1996 (référence exacte à vérifier auprès de l'encadrant).
+
+\bibitem{formation-interne}
+Notes de synthèse de la formation interne CMR sur le marché des capitaux et la BVC, Jours 1 à 7 (document de travail interne au stage).
+
+\end{thebibliography}
+
+\end{document}

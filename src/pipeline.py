@@ -119,6 +119,11 @@ class DSS_Pipeline:
         unified, report = ingest_workbook(excel_path, required_variables=required_vars)
         self.reports['ingestion'] = report
         
+        # Convert object columns to string to avoid Parquet datetime errors (skip Date column)
+        for col in unified.select_dtypes(include=['object']).columns:
+            if col not in ['Date']:  # Keep Date as datetime
+                unified[col] = unified[col].astype(str)
+        
         # Save to Parquet
         out_path = str(self.data_dir / 'market_data_raw.parquet')
         save_unified_dataset(unified, out_path)
@@ -170,6 +175,10 @@ class DSS_Pipeline:
         
         self.reports['composition'] = report
         
+        # Convert object columns to string to avoid Parquet datetime errors
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = df[col].astype(str)
+        
         # Save to Parquet
         out_path = str(self.data_dir / 'index_composition.parquet')
         df.to_parquet(out_path, compression='snappy', index=False)
@@ -178,18 +187,18 @@ class DSS_Pipeline:
     
     def apply_quality_filter(self, unified_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
         """
-        Apply data quality filter (consecutive observations).
+        Apply NEW temporal quality filter (Coverage Graceful approach).
         
-        Args:
-            unified_df: Raw market data
+        DOES NOT reject based on number of observations.
+        ONLY rejects if temporal quality is poor (gaps > 7 days).
         
-        Returns:
-            (filtered_df, filter_report)
+        Each indicator will manage its own minimum observations.
         """
-        filtered, report = filter_companies_by_usable_data(
+        from src.validation import filter_companies_by_temporal_quality
+        
+        filtered, report = filter_companies_by_temporal_quality(
             unified_df,
-            min_consecutive=MIN_CONSECUTIVE,
-            max_gap_days=MAX_GAP_DAYS
+            max_gap_days=MAX_GAP_DAYS  # 7 days
         )
         
         self.reports['quality_filter'] = report

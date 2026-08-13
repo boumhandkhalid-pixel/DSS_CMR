@@ -179,6 +179,37 @@ def confidence_score_v2(row: pd.Series, df_all: pd.DataFrame, confidence_weights
     return round(raw * 100, 1)
 
 
+def compute_family_coverage(row: pd.Series) -> Dict:
+    """
+    NEW: Compute coverage per family, not just global.
+    
+    Returns dict with:
+        - Trend_Coverage (0.0 to 1.0)
+        - Momentum_Coverage (0.0 to 1.0)
+        - Volume_Coverage (0.0 to 1.0)
+    
+    Example:
+        If SMA-50 is INSUFFICIENT but SMA-20 and EMA-20 are VALID:
+        Trend_Coverage = 2/3 = 0.67
+    """
+    FAMILIES = {
+        'Trend':    ['SMA_20', 'SMA_50', 'EMA_20'],
+        'Momentum': ['RSI_14', 'MACD'],
+        'Volume':   ['RVOL', 'VWAP'],
+    }
+    
+    coverage = {}
+    
+    for fam, members in FAMILIES.items():
+        valid_count = sum(
+            1 for ind in members
+            if row.get(f'Valid_{ind}', 'INSUFFICIENT_DATA') == 'VALID'
+        )
+        coverage[f'{fam}_Coverage'] = valid_count / len(members) if len(members) > 0 else 0.0
+    
+    return coverage
+
+
 def compute_signals_and_confidence(
     df: pd.DataFrame,
     signal_rules: Dict,
@@ -186,7 +217,7 @@ def compute_signals_and_confidence(
     confidence_weights: Dict
 ) -> pd.DataFrame:
     """
-    Compute signals, family scores, overall score, and confidence.
+    Compute signals, family scores, overall score, confidence, and coverage.
     
     Args:
         df: DataFrame with indicators
@@ -195,7 +226,7 @@ def compute_signals_and_confidence(
         confidence_weights: CONFIDENCE_WEIGHTS from config
     
     Returns:
-        DataFrame with signal, score, and confidence columns
+        DataFrame with signal, score, confidence, and coverage columns
     """
     # Individual signals
     signals_df = df.apply(lambda r: pd.Series(individual_signals(r, signal_rules)), axis=1)
@@ -218,5 +249,10 @@ def compute_signals_and_confidence(
     
     # Confidence
     df['Confidence'] = df.apply(lambda r: confidence_score_v2(r, df, confidence_weights), axis=1)
+    
+    # NEW: Coverage per family
+    coverage_df = df.apply(lambda r: pd.Series(compute_family_coverage(r)), axis=1)
+    for col in coverage_df.columns:
+        df[col] = coverage_df[col]
     
     return df

@@ -19,8 +19,10 @@ def make_decision(
     """
     Make investment decision for one row.
     
+    NEW: Uses Coverage Graceful approach with family coverage.
+    
     Args:
-        row: DataFrame row with Overall_Score and Confidence
+        row: DataFrame row with Overall_Score, Confidence, and Coverage columns
         thresholds: DECISION_THRESHOLDS from config
         min_coverage: MIN_COVERAGE_FOR_DECISION from config
     
@@ -32,32 +34,42 @@ def make_decision(
     score = row.get('Overall_Score', np.nan)
     conf = row.get('Confidence', np.nan)
     
-    # Calculate data coverage
+    # Calculate global data coverage
     valid_count = sum(
         1 for ind in REQUIRED_IND
         if row.get(f'Valid_{ind}', 'INSUFFICIENT_DATA') == 'VALID'
     )
-    coverage = valid_count / len(REQUIRED_IND)
+    overall_coverage = valid_count / len(REQUIRED_IND)
     
-    # Gate 1: Minimum coverage
-    if coverage < min_coverage:
-        return 'INSUFFICIENT_DATA', coverage
+    # Get family coverage (NEW)
+    trend_cov = row.get('Trend_Coverage', 0.0)
+    momentum_cov = row.get('Momentum_Coverage', 0.0)
+    volume_cov = row.get('Volume_Coverage', 0.0)
     
-    # Gate 2: Score and confidence must be computable
+    # Gate 1: Overall coverage < 50% → INSUFFICIENT
+    if overall_coverage < min_coverage:
+        return 'INSUFFICIENT_DATA', overall_coverage
+    
+    # Gate 2: At least ONE family must have >= 50% coverage
+    # (Can't make decision if ALL families are incomplete)
+    if trend_cov < 0.5 and momentum_cov < 0.5 and volume_cov < 0.5:
+        return 'INSUFFICIENT_DATA', overall_coverage
+    
+    # Gate 3: Score and confidence must be computable
     if pd.isna(score) or pd.isna(conf):
-        return 'INSUFFICIENT_DATA', coverage
+        return 'INSUFFICIENT_DATA', overall_coverage
     
     # Decision rules
     buy_t = thresholds['buy']
     sell_t = thresholds['sell']
     
     if score >= buy_t['min_score'] and conf >= buy_t['min_confidence']:
-        return 'BUY', coverage
+        return 'BUY', overall_coverage
     
     if score <= sell_t['max_score'] and conf >= sell_t['min_confidence']:
-        return 'SELL', coverage
+        return 'SELL', overall_coverage
     
-    return 'HOLD', coverage
+    return 'HOLD', overall_coverage
 
 
 def make_investment_decisions(

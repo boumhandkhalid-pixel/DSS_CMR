@@ -146,26 +146,60 @@ def compute_filter_thresholds(composition_df):
 # market move compressed into one step.  The formula still runs and produces
 # a number, but that number is financially meaningless.
 #
-# Binding constraint: RSI_14
-# ───────────────────────────
-# RSI(14) needs 14 consecutive price observations to produce its first
-# valid value.  That is the minimum across all price-based indicators.
-# (EMA_20 needs 20, SMA_20 needs 20, MACD needs 26, etc.)
+# Binding constraint: SMA_50 (largest window)
+# ───────────────────────────────────────────
+# SMA_50 needs 50 consecutive price observations to produce its first valid value.
+# This is the strictest requirement among all price-based indicators.
+# (RSI-14 needs 15, EMA-20 needs 20, MACD needs 27, SMA-20 needs 20)
+#
+# MAX_GAP_DAYS: Data Quality Heuristic
+# ─────────────────────────────────────
+# This is NOT a mathematical requirement of RSI or any indicator.
+# It is a practical rule to distinguish:
+#   - Normal gaps (weekends, occasional holidays): ≤ 7 days
+#   - Abnormal gaps (missing trading sessions): > 7 days
+#
+# A gap > 7 days likely means at least 1-2 full trading sessions are missing.
+#
+# More rigorous approach (future improvement):
+#   Use the official BVC trading calendar to detect exactly which sessions are missing,
+#   rather than relying on a calendar-day threshold.
 #
 # Therefore:
-#   MIN_CONSECUTIVE = 14
-#   MAX_GAP_DAYS    = 7   (covers weekends + public holidays; a gap of
-#                          8+ days means at least one full trading week
-#                          is missing and breaks the run)
+# ═══════════════════════════════════════════════════════════════════════════════
+# NOUVELLE APPROCHE: Coverage Graceful (Pas de rejet global sur MIN_CONSECUTIVE)
+# ═══════════════════════════════════════════════════════════════════════════════
 #
-# A company is REMOVED if its longest unbroken Cours run < 14.
+# Philosophie:
+#   - NE PAS rejeter un titre simplement parce qu'il n'a pas 50 observations
+#   - Chaque indicateur gère son propre minimum (voir INDICATOR_MIN_OBS ci-dessous)
+#   - Si un indicateur manque de données → NaN (pas de rejet du titre)
+#   - Coverage et Confidence s'ajustent automatiquement
+#   - Décision finale basée sur Data_Coverage global + Coverage par famille
+#
+# Pourquoi ?
+#   - SMA-50 nécessite 50 obs, mais RSI-14 seulement 15 obs
+#   - Rejeter un titre à 30 obs = perdre RSI, SMA-20, EMA-20, RVOL, VWAP, HV-20
+#   - C'est du gaspillage d'information !
+#
+# Solution:
+#   - Filtrer uniquement sur QUALITÉ TEMPORELLE (MAX_GAP_DAYS)
+#   - Pas de trous > 7 jours entre observations
+#   - Nombre d'observations = détermine quels indicateurs sont calculables
+#
+# ═══════════════════════════════════════════════════════════════════════════════
 
-MIN_CONSECUTIVE: int = 14   # minimum run length (RSI_14 binding constraint)
-MAX_GAP_DAYS:    int = 7    # max calendar gap still considered "consecutive"
+# MAX_GAP_DAYS: Qualité temporelle des données
+# Rejette un titre si gap entre 2 observations consécutives > 7 jours
+# (7 jours = weekend + quelques fériés)
+MAX_GAP_DAYS: int = 7
 
-# Backward-compatible alias — notebooks import this name
-MIN_USABLE_ROWS:                int = MIN_CONSECUTIVE
-MIN_USABLE_ROWS_SAMPLE_OVERRIDE: int = 1   # only for notebook validation on sample data
+# MIN_CONSECUTIVE: DEPRECATED (gardé pour compatibilité notebooks anciens)
+# ⚠️ NE PLUS UTILISER comme filtre global
+# ⚠️ Utilisé uniquement dans filter_companies_by_usable_data() legacy
+MIN_CONSECUTIVE: int = 14  # Pour compatibilité backward uniquement
+MIN_USABLE_ROWS: int = MIN_CONSECUTIVE  # Alias backward-compatible
+MIN_USABLE_ROWS_SAMPLE_OVERRIDE: int = 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────

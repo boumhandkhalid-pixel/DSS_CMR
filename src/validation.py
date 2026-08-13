@@ -421,6 +421,138 @@ def validate_dataset(df: pd.DataFrame, verbose: bool = False) -> Tuple[bool, Dic
     return all_passed, report
 
 
+def filter_companies_by_temporal_quality(
+    df: pd.DataFrame,
+    max_gap_days: int = 7,
+    key_column: str = 'Cours',
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    NEW APPROACH: Coverage Graceful Filtering
+    ==========================================
+    
+    Filter companies based on TEMPORAL QUALITY only (no minimum count).
+    
+    Philosophy:
+    -----------
+    - DO NOT reject a company just because it has < 50 observations
+    - Each indicator manages its own minimum (see INDICATOR_MIN_OBS)
+    - If indicator lacks data → NaN (no company rejection)
+    - Coverage and Confidence adjust automatically
+    
+    Why this is better:
+    -------------------
+    Example: Company has 30 observations
+    
+    OLD APPROACH (MIN_CONSECUTIVE=50):
+        → REJECTED completely
+        → 0 indicators computed
+        → Total information loss
+    
+    NEW APPROACH (Coverage Graceful):
+        → KEPT in universe
+        → RSI-14 ✓ (needs 15)
+        → SMA-20 ✓ (needs 20)
+        → SMA-50 ✗ (needs 50) → NaN
+        → EMA-20 ✓ (needs 20)
+        → MACD ✓ (needs 26)
+        → RVOL ✓ (needs 1)
+        → VWAP ✓ (needs 1)
+        → Coverage = 6/7 = 86%
+        → Decision possible (likely HOLD due to partial coverage)
+    
+    This function ONLY checks:
+    --------------------------
+    - Temporal continuity: no gaps > max_gap_days between observations
+    - Does NOT check: minimum number of observations
+    
+    Args:
+        df: Unified dataset (must have 'Date', 'CODE_ISIN', key_column)
+        max_gap_days: Maximum calendar days between consecutive observations
+                      (default 7 = weekend + holidays)
+        key_column: Column to check for non-null values (default 'Cours')
+    
+    Returns:
+        (filtered_df, removal_report)
+    """
+    removal_report = {
+        'total_rows_before': len(df),
+        'total_companies_before': df['CODE_ISIN'].nunique(),
+        'removed_companies': [],
+        'removed_rows': 0,
+        'max_gap_days': max_gap_days,
+        'key_column': key_column,
+        'filter_type': 'temporal_quality_only',
+    }
+
+    valid_isins = []
+
+    for isin in sorted(df['CODE_ISIN'].unique()):
+        company_df = df[df['CODE_ISIN'] == isin].sort_values('Date')
+        company_name = company_df['Company'].iloc[0]
+        total_rows = len(company_df)
+
+        # Dates where key_column is non-null, sorted ascending
+        valid_dates = company_df[company_df[key_column].notna()]['Date'].sort_values()
+        n_valid = len(valid_dates)
+
+        if n_valid == 0:
+            # No valid prices at all → reject
+            removal_report['removed_companies'].append({
+                'CODE_ISIN': isin,
+                'Company': company_name,
+                'Total_Rows': total_rows,
+                'Valid_Obs': 0,
+                'Max_Gap': None,
+                'Reason': f'No valid {key_column} observations'
+            })
+            removal_report['removed_rows'] += total_rows
+            continue
+
+        # Check for large gaps
+        has_large_gap = False
+        max_gap = 0
+        
+        if n_valid > 1:
+            for i in range(1, n_valid):
+                gap = (valid_dates.iloc[i] - valid_dates.iloc[i - 1]).days
+                max_gap = max(max_gap, gap)
+                if gap > max_gap_days:
+                    has_large_gap = True
+                    break
+
+        if has_large_gap:
+            # Large gap found → reject
+            removal_report['removed_companies'].append({
+                'CODE_ISIN': isin,
+                'Company': company_name,
+                'Total_Rows': total_rows,
+                'Valid_Obs': n_valid,
+                'Max_Gap': max_gap,
+                'Reason': f'Gap between observations = {max_gap} days (max allowed: {max_gap_days})'
+            })
+            removal_report['removed_rows'] += total_rows
+        else:
+            # Temporal quality OK → keep company
+            valid_isins.append(isin)
+
+    filtered_df = (
+        df[df['CODE_ISIN'].isin(valid_isins)]
+        .copy()
+        .reset_index(drop=True)
+    )
+
+    removal_report.update({
+        'total_rows_after': len(filtered_df),
+        'total_companies_after': filtered_df['CODE_ISIN'].nunique(),
+        'companies_retained': len(valid_isins),
+        'companies_removed': len(removal_report['removed_companies']),
+        'rows_retained': len(filtered_df),
+        'rows_removed': removal_report['removed_rows'],
+    })
+
+    return filtered_df, removal_report
+
+
 def filter_companies_by_usable_data(
     df: pd.DataFrame,
     min_consecutive: int = 14,
