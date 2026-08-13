@@ -104,14 +104,14 @@ def render_header():
                 </div>
                 <div class="cmr-logo-header-text">
                     <h1>Système d'Aide à la Décision</h1>
-                    <p class="caption">Pôle Gestion Portefeuille - Caisse Marocaine des Retraites</p>
+                    <p class="caption">Pôle Gestion de Portefeuille - Caisse Marocaine des Retraites</p>
                 </div>
             </div>
         """, unsafe_allow_html=True)
     else:
         # Fallback sans logo
         st.title("Système d'Aide à la Décision")
-        st.caption("Pôle Gestion Portefeuille - Caisse Marocaine des Retraites")
+        st.caption("Pôle Gestion de Portefeuille - Caisse Marocaine des Retraites")
     
     st.divider()
 
@@ -773,7 +773,7 @@ def render_footer():
                 <strong>DSS Gestion Portefeuille</strong> - Version 2.1
             </p>
             <p style='margin: 0.5rem 0;'>
-                © 2026 Caisse Marocaine des Retraites - Pôle Gestion Portefeuille
+                © 2026 Caisse Marocaine des Retraites - Pôle Gestion de Portefeuille
             </p>
             <p style='margin: 0.5rem 0; font-size: 0.85rem;'>
                 Système d'aide à la décision pour l'analyse technique et fondamentale
