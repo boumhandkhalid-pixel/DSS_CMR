@@ -229,132 +229,277 @@ def render_filter_criteria_section():
         st.info("📋 Importez d'abord un fichier de composition pour configurer les critères.")
         return
     
-    # Extraire les indices disponibles
-    if 'Indice' in comp_data.columns:
-        available_indices = sorted(comp_data['Indice'].unique().tolist())
-    else:
+    # Indices supportés (décision encadrant : uniquement MASI et MASI 20)
+    from config.methodology import FILTER_CONFIG
+    from src.parsers.composition_parser import normalize_index_name
+
+    supported = FILTER_CONFIG.get('supported_indices', ['MASI', 'MASI 20'])
+    top_n_masi = int(FILTER_CONFIG.get('masi_top_n_by_weight', 40))
+    norm_supported = {normalize_index_name(s): s for s in supported}
+
+    if 'Indice' not in comp_data.columns:
         st.error("❌ Colonne 'Indice' introuvable dans les données de composition.")
         return
-    
-    st.markdown("""
-    Configurez les critères de filtrage pour l'univers investissable. 
-    Les recommandations seront générées selon ces critères.
-    """)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    # Critère 1 : Indice cible
+
+    # Ne conserver que les indices supportés réellement présents dans le fichier
+    present = []
+    for idx in comp_data['Indice'].unique():
+        if normalize_index_name(idx) in norm_supported and idx not in present:
+            present.append(idx)
+    available_indices = sorted(present)
+
+    if not available_indices:
+        st.warning("⚠️ Le fichier importé ne contient ni **MASI** ni **MASI 20**. "
+                   "Ces deux indices sont les seuls pris en charge.")
+        return
+
+    st.markdown(
+        "Choisissez l'**indice de référence**. La règle de sélection de l'univers "
+        "investissable est appliquée automatiquement :"
+    )
+    st.markdown(
+        f"- **MASI** → les **{top_n_masi} premières** sociétés par **poids flottant**\n"
+        f"- **MASI 20** → **tous** les titres de l'indice"
+    )
+
+    col1, col2 = st.columns([1, 1])
+
     with col1:
-        st.markdown("**🎯 Indice Cible**")
-        
-        # Valeur par défaut depuis config ou session
         default_index = st.session_state.get('selected_index', 'MASI 20')
-        if default_index not in available_indices and len(available_indices) > 0:
+        if default_index not in available_indices:
             default_index = available_indices[0]
-        
+
         selected_index = st.selectbox(
-            "Choisir l'indice à analyser",
+            "🎯 Indice de référence",
             options=available_indices,
-            index=available_indices.index(default_index) if default_index in available_indices else 0,
+            index=available_indices.index(default_index),
             key="filter_index_select",
-            help="Seuls les titres appartenant à cet indice seront analysés"
+            help="Seuls MASI et MASI 20 sont pris en charge."
         )
-        
-        # Afficher statistiques de l'indice sélectionné
-        if selected_index:
-            n_titles_in_index = len(comp_data[comp_data['Indice'] == selected_index])
-            st.caption(f"📊 {n_titles_in_index} titres dans {selected_index}")
-    
-    # Critère 2 : Free Float minimum
+
+    # Déterminer la règle et l'aperçu du nombre de titres retenus
+    idx_rows = comp_data[comp_data['Indice'].apply(normalize_index_name) == normalize_index_name(selected_index)].copy()
+    n_in_index = len(idx_rows)
+
+    if normalize_index_name(selected_index) == normalize_index_name('MASI'):
+        n_selected = min(top_n_masi, n_in_index)
+        rule_txt = f"MASI → **{n_selected}** premières sociétés par poids flottant (sur {n_in_index})"
+    else:
+        n_selected = n_in_index
+        rule_txt = f"MASI 20 → **tous** les titres ({n_in_index})"
+
     with col2:
-        st.markdown("**📈 Free Float Minimum**")
-        
-        default_ff = st.session_state.get('selected_ff_min', 0.10)
-        
-        selected_ff = st.slider(
-            "Facteur de flottant minimum",
-            min_value=0.0,
-            max_value=0.50,
-            value=float(default_ff),
-            step=0.05,
-            format="%.2f",
-            key="filter_ff_select",
-            help="Minimum 10% recommandé pour la liquidité"
-        )
-        
-        st.caption(f"Seuil: {selected_ff*100:.0f}% du capital flottant")
-    
-    # Critère 3 : Capitalisation flottante (percentile)
-    with col3:
-        st.markdown("**💰 Capitalisation Flottante**")
-        
-        default_percentile = st.session_state.get('selected_ffmc_percentile', 25)
-        
-        percentile_options = {
-            "p10 (Très inclusif)": 10,
-            "p25 (Modéré)": 25,
-            "p50 (Strict)": 50,
-            "p75 (Très strict)": 75
-        }
-        
-        percentile_labels = list(percentile_options.keys())
-        percentile_values = list(percentile_options.values())
-        
-        # Trouver l'index par défaut
-        try:
-            default_idx = percentile_values.index(default_percentile)
-        except ValueError:
-            default_idx = 1  # p25 par défaut
-        
-        selected_percentile_label = st.selectbox(
-            "Seuil de capitalisation",
-            options=percentile_labels,
-            index=default_idx,
-            key="filter_percentile_select",
-            help="Percentile de la capitalisation flottante (MAD)"
-        )
-        
-        selected_percentile = percentile_options[selected_percentile_label]
-        
-        # Calculer la valeur MAD correspondante pour information
-        if 'FF_MarketCap' in comp_data.columns and selected_index:
-            index_data = comp_data[comp_data['Indice'] == selected_index]
-            if not index_data.empty:
-                ffmc_value = index_data['FF_MarketCap'].quantile(selected_percentile / 100)
-                st.caption(f"≈ {ffmc_value/1e6:.1f} M MAD (p{selected_percentile})")
-    
+        st.markdown("**📋 Règle appliquée**")
+        st.caption(rule_txt)
+        st.caption(f"→ {n_selected} titres sélectionnés dans l'indice (avant jointure marché)")
+
     st.divider()
-    
-    # Bouton d'application des critères
-    col1, col2, col3 = st.columns([2, 1, 2])
-    
-    with col2:
-        if st.button("✅ Appliquer les Critères", use_container_width=True, type="primary"):
-            # Sauvegarder les critères sélectionnés dans session_state
+
+    # Bouton d'application
+    b1, b2, b3 = st.columns([2, 1, 2])
+    with b2:
+        if st.button("✅ Appliquer", use_container_width=True, type="primary"):
             st.session_state['selected_index'] = selected_index
-            st.session_state['selected_ff_min'] = selected_ff
-            st.session_state['selected_ffmc_percentile'] = selected_percentile
             st.session_state['criteria_applied'] = True
-            
-            # Filtrer les données de composition selon l'indice sélectionné
-            from src.parsers.composition_parser import normalize_index_name
-            filtered_comp = comp_data[
-                comp_data['Indice'].apply(normalize_index_name) == normalize_index_name(selected_index)
-            ].copy()
-            
-            st.session_state['composition_data'] = filtered_comp
-            
-            st.success(f"✅ Critères appliqués : {selected_index}, FF ≥ {selected_ff*100:.0f}%, Cap ≥ p{selected_percentile}")
+            # Composition filtrée sur l'indice choisi (la sélection top-N se fait au pipeline)
+            st.session_state['composition_data'] = idx_rows
+            st.success(f"✅ Indice appliqué : {selected_index} — {rule_txt}")
             st.rerun()
-    
-    # Afficher les critères actuels si appliqués
+
+    # Critères actifs
     if st.session_state.get('criteria_applied', False):
-        st.info(f"""
-        **📋 Critères Actifs :**  
-        • Indice : **{st.session_state.get('selected_index', 'N/A')}**  
-        • Free Float : **≥ {st.session_state.get('selected_ff_min', 0)*100:.0f}%**  
-        • Capitalisation : **≥ p{st.session_state.get('selected_ffmc_percentile', 25)}**
+        active_index = st.session_state.get('selected_index', 'N/A')
+        if normalize_index_name(active_index) == normalize_index_name('MASI'):
+            active_rule = f"{top_n_masi} premières par poids flottant"
+        else:
+            active_rule = "tous les titres de l'indice"
+        st.info(f"**📋 Critère actif :** Indice **{active_index}** — {active_rule}.")
+
+
+def render_traceability_section():
+    """
+    Page Traçabilité — restitution concise et business-oriented :
+      • Market Data : sociétés, observations, période.
+      • Composition : indice sélectionné, règle appliquée, table paginée (poids flottant).
+      • Jointure : retenus / rejetés + raison principale.
+    Aucune logique métier : lecture des sorties du pipeline (filter_report, trace, session).
+    """
+    from src.parsers.composition_parser import normalize_index_name
+
+    st.markdown("### 🔎 Traçabilité de l'analyse")
+
+    unified = st.session_state.get('unified_data')
+    comp_data = st.session_state.get('composition_data')
+    filter_report = st.session_state.get('filter_report', {}) or {}
+    stats = st.session_state.get('intersection_stats', {}) or {}
+    trace_df = st.session_state.get('analysis_trace')
+    summary = st.session_state.get('decisions_summary')
+
+    # ── Dérivations ROBUSTES (survivent à un rechargement de session) ──
+    # Indice : filter_report → session → déduit de la composition
+    selected_index = st.session_state.get('selected_index') or filter_report.get('index')
+    if (not selected_index or str(selected_index) in ('N/A', 'None')) and comp_data is not None and 'Indice' in comp_data.columns:
+        uq = [str(x) for x in comp_data['Indice'].dropna().unique()]
+        selected_index = uq[0] if len(uq) == 1 else (", ".join(uq) if uq else 'N/A')
+    selected_index = selected_index or 'N/A'
+
+    # Sociétés retenues : decisions_summary (restauré) fait foi, sinon rapports
+    if summary is not None and len(summary):
+        retained_count = summary['CODE_ISIN'].nunique() if 'CODE_ISIN' in summary.columns else len(summary)
+    else:
+        retained_count = stats.get('after_gates', filter_report.get('output_companies', 0)) or 0
+
+    n_dispo = len(comp_data) if comp_data is not None else 0
+    selected_n = filter_report.get('selected_companies')  # peut être None après reload
+
+    # ── Cartes de synthèse ──
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("**📥 Données marché**")
+        if unified is not None and len(unified):
+            st.metric("Sociétés détectées", unified['CODE_ISIN'].nunique())
+            st.caption(f"{len(unified):,} observations")
+            if 'Date' in unified.columns and unified['Date'].notna().any():
+                st.caption(f"Période : {unified['Date'].min().date()} → {unified['Date'].max().date()}")
+        else:
+            st.caption("—")
+    with c2:
+        st.markdown("**🎯 Composition / Indice**")
+        st.metric(f"Indice : {selected_index}", n_dispo)
+        st.caption("Sociétés disponibles dans l'indice")
+        rule = filter_report.get('selection_rule')
+        if rule:
+            st.caption(f"Règle : {rule}")
+    with c3:
+        st.markdown("**🔗 Jointure marché × indice**")
+        st.metric("Sociétés retenues", retained_count)
+        if selected_n:
+            st.caption(f"Sélectionnées dans l'indice : {selected_n}")
+        st.caption("Rejet possible : titre de l'indice sans données marché, ou hors sélection.")
+
+    # Ensembles pour motifs exacts (fallback sur decisions_summary si trace absente après reload)
+    if trace_df is not None and len(trace_df):
+        retained_isins = set(trace_df['CODE_ISIN'])
+    elif summary is not None and 'CODE_ISIN' in summary.columns:
+        retained_isins = set(summary['CODE_ISIN'])
+    else:
+        retained_isins = set()
+    market_raw = st.session_state.get('market_isins_raw', set())
+    market_quality = st.session_state.get('market_isins_quality', set())
+
+    def _reason(isin: str) -> str:
+        """Motif exact pour une société sélectionnée mais non retenue."""
+        if isin in retained_isins:
+            return ""
+        if market_raw and isin not in market_raw:
+            return "Absente du fichier marché (aucun historique de prix pour cet ISIN)"
+        if market_quality and isin not in market_quality:
+            return "Écartée au contrôle qualité (aucun cours valide)"
+        return "Écartée au filtrage / données insuffisantes"
+
+    # ── Table Composition : sociétés de l'indice triées par poids flottant ──
+    if comp_data is not None and 'Weight' in comp_data.columns and len(comp_data):
+        st.markdown("##### 🏦 Composition de l'indice (triée par poids flottant)")
+        selected_n = int(filter_report.get('selected_companies', len(comp_data)) or len(comp_data))
+
+        comp_sorted = comp_data.sort_values('Weight', ascending=False).reset_index(drop=True)
+        rows = []
+        for i, r in comp_sorted.iterrows():
+            selected = i < selected_n  # top-N (MASI) ou tous (MASI 20)
+            isin = r.get('CODE_ISIN', '')
+            if not selected:
+                statut = "⊗ Hors sélection (poids flottant)"
+            elif isin in retained_isins:
+                statut = "✅ Retenue (analysée)"
+            else:
+                statut = "⚠️ " + _reason(isin)
+            rows.append({
+                "Rang": i + 1,
+                "Société": r.get('Company', ''),
+                "Code ISIN": isin,
+                "Poids flottant": f"{float(r['Weight']) * 100:.2f}%" if pd.notna(r.get('Weight')) else "—",
+                "Statut": statut,
+            })
+        comp_table = pd.DataFrame(rows)
+        render_paginated_dataframe(comp_table, lambda d: d, page_size=10, key='trace_comp')
+
+    # ── Table des rejets (sélectionnées mais non analysées) avec motif exact ──
+    if comp_data is not None and 'Weight' in comp_data.columns:
+        selected_n = int(filter_report.get('selected_companies', len(comp_data)) or len(comp_data))
+        comp_sorted = comp_data.sort_values('Weight', ascending=False).reset_index(drop=True)
+        selected_part = comp_sorted.head(selected_n)
+        rejected_rows = [
+            {
+                "Société": r.get('Company', ''),
+                "Code ISIN": r.get('CODE_ISIN', ''),
+                "Poids flottant": f"{float(r['Weight']) * 100:.2f}%" if pd.notna(r.get('Weight')) else "—",
+                "Raison": _reason(r.get('CODE_ISIN', '')),
+            }
+            for _, r in selected_part.iterrows()
+            if r.get('CODE_ISIN', '') not in retained_isins
+        ]
+        if rejected_rows:
+            with st.expander(f"⚠️ Sociétés rejetées ({len(rejected_rows)}) — sélectionnées mais non analysables"):
+                render_paginated_dataframe(pd.DataFrame(rejected_rows), lambda d: d, page_size=10, key='trace_rej')
+
+
+def render_intersection_breakdown():
+    """
+    (Conservé) Bilan détaillé de la jointure marché ∩ indice par ISIN.
+    """
+    stats = st.session_state.get('intersection_stats')
+    if not stats:
+        return
+
+    with st.expander("🔎 Traçabilité du filtrage (marché ∩ indice)", expanded=True):
+        st.markdown(
+            f"Jointure par **code ISIN** entre les données marché et la composition de "
+            f"l'indice **{stats['index_name']}**. Elle montre précisément d'où viennent "
+            f"les titres analysés."
+        )
+
+        # Étape 1 : les deux ensembles de départ
+        st.markdown("##### 1️⃣ Ensembles de départ")
+        c1, c2 = st.columns(2)
+        c1.metric("Sociétés marché exploitables", stats['market'],
+                  help="Sociétés dont la série de cours est continue (contrôle qualité : aucun trou > 7 jours)")
+        c2.metric(f"Titres de l'indice {stats['index_name']}", stats['index'],
+                  help="Titres composant l'indice sélectionné dans le fichier de composition")
+
+        # Étape 2 : résultat de la jointure
+        st.markdown("##### 2️⃣ Résultat de la jointure par ISIN")
+        c3, c4, c5 = st.columns(3)
+        c3.metric("✅ Communs (analysables)", stats['kept'],
+                  help="Présents dans le marché ET dans l'indice → seuls ceux-ci peuvent être analysés")
+        c4.metric("⊗ Titres indice sans données marché", stats['index_absent_from_market'],
+                  help="Dans l'indice mais absents du fichier marché → aucun cours/volume → non analysables")
+        c5.metric("⊗ Sociétés marché hors indice", stats['market_outside_index'],
+                  help="Ont des données marché mais n'appartiennent pas à l'indice choisi → écartées (Gate 1)")
+
+        # Étape 3 : après les filtres d'investabilité
+        st.markdown("##### 3️⃣ Après filtres d'investabilité")
+        st.metric("Titres retenus (univers final)", stats['after_gates'],
+                  help="Après Gate 2 (poids flottant) et Gate 3 (capitalisation flottante)")
+
+        # Légende explicative
+        st.divider()
+        st.markdown("""
+        **Comment lire ce bilan :**
+        - **Sociétés marché exploitables** : issues du fichier marché, après *contrôle qualité*
+          (on ne garde que les séries de cours continues, sans trou > 7 jours, car un indicateur
+          calculé sur une série discontinue n'a pas de sens).
+        - **Titres indice sans données marché** : présents dans l'indice choisi mais **absents du
+          fichier marché** (aucun ISIN correspondant) → impossible de les analyser faute de cours.
+        - **Communs (analysables)** = intersection des deux : c'est la base réellement analysable,
+          ensuite affinée par les filtres poids flottant et capitalisation.
         """)
+
+        if stats['kept'] == 0:
+            st.warning(
+                "⚠️ Aucun titre commun entre le marché et l'indice sélectionné. "
+                "Vérifie que les codes ISIN correspondent et que l'indice choisi est cohérent "
+                "avec les sociétés présentes dans le fichier marché."
+            )
 
 
 def render_analysis_section():
@@ -376,7 +521,7 @@ def render_analysis_section():
         return
     
     if in_progress:
-        st.warning("⏳ Analyse en cours, veuillez patien ter...")
+        st.warning("⏳ Analyse en cours, veuillez patienter...")
         render_progress()
         return
     
@@ -392,6 +537,9 @@ def render_analysis_section():
         with col2:
             if st.button("🔄 Relancer l'Analyse", use_container_width=True):
                 run_analysis()
+        
+        # Bilan de transparence : d'où viennent les titres analysés
+        render_traceability_section()
     else:
         st.markdown("""
         L'analyse complète du portefeuille comprend :
@@ -405,6 +553,27 @@ def render_analysis_section():
         st.divider()
         if st.button("🚀 Analyser le Portefeuille", type="primary", use_container_width=True):
             run_analysis()
+
+
+def _class_legend() -> str:
+    """Légende dynamique symbole → intitulé (depuis la config, jamais codée en dur)."""
+    from config.methodology import FLASH_MOMENTUM_CONFIG as C
+    sym = dict(C.get('class_symbol_scale', []))            # {80:'+++', 60:'++', ...}
+    bounds = sorted([b for b, _ in C.get('classification', [])], reverse=True)  # [80,60,40,0]
+    labels = dict(C.get('classification', []))             # {80:'Très Fort', ...}
+    parts = [f"{sym.get(b, '')} : {labels.get(b, '')}" for b in bounds]
+    return "  ·  ".join(parts)
+
+
+def _class_name_for_symbol(symbol: str) -> str:
+    """Intitulé de classe correspondant à un symbole (pour info-bulle)."""
+    from config.methodology import FLASH_MOMENTUM_CONFIG as C
+    sym = dict(C.get('class_symbol_scale', []))
+    labels = dict(C.get('classification', []))
+    for b, s in sym.items():
+        if s == symbol:
+            return labels.get(b, '')
+    return ''
 
 
 def render_recommendations_section():
@@ -483,31 +652,45 @@ def render_recommendations_section():
     
     st.caption(f"Affichage : {len(filtered_decisions)} / {total} titres")
     
-    # Tableau
+    # Tableau (paginé si plus de 10 titres)
     if len(filtered_decisions) > 0:
         display_df = prepare_display_table(filtered_decisions)
-        styled_df = style_decisions_table(display_df)
-        
-        st.dataframe(styled_df, use_container_width=True, height=400, hide_index=True)
+        legend = _class_legend()
+        col_cfg = {
+            "Classe": st.column_config.TextColumn(
+                "Classe",
+                help="Symbole de la classe du score technique.\n\n" + legend,
+            )
+        }
+        render_paginated_dataframe(display_df, style_decisions_table, page_size=10, key='rec',
+                                   column_config=col_cfg)
+        st.markdown(
+            f"<div style='color:#4B5563; font-size:0.9rem; padding:0.3rem 0;'>"
+            f"<strong>Légende — Classe :</strong>&nbsp; {legend}</div>",
+            unsafe_allow_html=True,
+        )
     else:
         st.info("Aucun titre ne correspond aux filtres sélectionnés.")
     
     st.divider()
     
     # Actions
+    selected_company = ""
     col1, col2 = st.columns([2, 1])
-    
+
     with col1:
         # Sélection d'une société pour détails
         if len(filtered_decisions) > 0:
-            company = st.selectbox(
+            companies_sorted = sorted(
+                filtered_decisions['Company'].dropna().unique().tolist(),
+                key=lambda s: str(s).casefold()
+            )
+            selected_company = st.selectbox(
                 "Voir les détails d'une société",
-                options=[""] + list(filtered_decisions['Company'].unique()),
+                options=[""] + companies_sorted,
                 key="company_select"
             )
-            if company:
-                render_company_details(company, decisions)
-    
+
     with col2:
         # Export CSV
         csv_data = decisions.to_csv(index=False).encode('utf-8')
@@ -519,31 +702,107 @@ def render_recommendations_section():
             use_container_width=True
         )
 
+    # Détails de la société sélectionnée — affichage centré, pleine largeur
+    if selected_company:
+        st.divider()
+        render_company_details(selected_company, decisions)
+
+
+def render_paginated_dataframe(display_df: pd.DataFrame, styler_fn, page_size: int = 10, key: str = 'page', column_config=None):
+    """
+    Affiche un DataFrame avec pagination (page_size lignes par page).
+
+    - Si le nombre de lignes ≤ page_size : affichage direct sans contrôles.
+    - Sinon : navigation Précédent/Suivant + indicateur « Page x/y ».
+    - Le styler_fn est appliqué uniquement à la tranche affichée (performance).
+
+    Args:
+        display_df: tableau déjà préparé pour l'affichage
+        styler_fn: fonction retournant un Styler à partir d'un DataFrame
+        page_size: nombre de lignes par page (défaut 10)
+        key: préfixe unique pour l'état de pagination
+    """
+    total = len(display_df)
+
+    # Pas de pagination nécessaire
+    if total <= page_size:
+        st.dataframe(styler_fn(display_df), use_container_width=True, hide_index=True,
+                     column_config=column_config)
+        return
+
+    n_pages = (total + page_size - 1) // page_size
+    page_key = f'{key}_page'
+
+    # Initialiser / borner l'index de page (clamp si les filtres réduisent le total)
+    current = st.session_state.get(page_key, 0)
+    current = max(0, min(current, n_pages - 1))
+    st.session_state[page_key] = current
+
+    # Contrôles de navigation
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c1:
+        if st.button("◀ Précédent", key=f'{key}_prev', disabled=(current == 0), use_container_width=True):
+            st.session_state[page_key] = current - 1
+            st.rerun()
+    with c3:
+        if st.button("Suivant ▶", key=f'{key}_next', disabled=(current >= n_pages - 1), use_container_width=True):
+            st.session_state[page_key] = current + 1
+            st.rerun()
+    with c2:
+        start_disp = current * page_size + 1
+        end_disp = min((current + 1) * page_size, total)
+        st.markdown(
+            f"<div style='text-align:center; padding-top:0.4rem; color:#4B5563;'>"
+            f"Page <strong>{current + 1}</strong> / {n_pages} &nbsp;·&nbsp; "
+            f"titres {start_disp}–{end_disp} sur {total}</div>",
+            unsafe_allow_html=True
+        )
+
+    # Tranche courante
+    start = current * page_size
+    page_df = display_df.iloc[start:start + page_size]
+    st.dataframe(styler_fn(page_df), use_container_width=True, hide_index=True,
+                 column_config=column_config)
+
 
 def prepare_display_table(decisions_df: pd.DataFrame) -> pd.DataFrame:
-    """Prépare le tableau d'affichage avec colonnes essentielles."""
+    """
+    Prépare le tableau d'affichage aligné sur le moteur de décision.
+
+    Colonne pilote = Score Technique (Flash Momentum, 0–100), qui pilote la décision.
+    Overall_Score/Confidence restent disponibles dans le détail (vue analytique).
+    """
     display = decisions_df.copy()
-    
-    # Simplifier INSUFFICIENT_DATA
+
+    # Simplifier INSUFFICIENT_DATA pour l'affichage
     display['Decision'] = display['Decision'].replace('INSUFFICIENT_DATA', 'INSUFFICIENT')
-    
-    # Colonnes essentielles
-    cols = ['Company', 'Overall_Score', 'Confidence', 'Decision']
+
+    # Garantir la présence des colonnes attendues (robustesse)
+    for col in ['Technical_Score', 'Score_Class', 'Score_Symbol', 'Data_Coverage']:
+        if col not in display.columns:
+            display[col] = pd.NA
+
+    # Classe = symbole seul (+++ / ++ / + / − / −−)
+    def _classe_sym(row):
+        sym = row.get('Score_Symbol', '')
+        return sym if isinstance(sym, str) and sym else "—"
+    display['_Classe'] = display.apply(_classe_sym, axis=1)
+
+    cols = ['Company', 'Technical_Score', '_Classe', 'Data_Coverage', 'Decision']
     display = display[cols].copy()
-    display.columns = ['Société', 'Score Global', 'Confiance (%)', 'Décision']
-    
-    # Formatage
-    display['Score Global'] = display['Score Global'].round(1)
-    display['Confiance (%)'] = display['Confiance (%)'].round(0).astype(int)
-    
-    # Tri par Score décroissant
-    display = display.sort_values('Score Global', ascending=False)
-    
+    display.columns = ['Société', 'Score Technique', 'Classe', 'Couverture', 'Décision']
+
+    # Formatage sûr (aucun cast int sur NaN)
+    display['Score Technique'] = pd.to_numeric(display['Score Technique'], errors='coerce').round(1)
+
+    # Tri par Score Technique décroissant (NaN en dernier)
+    display = display.sort_values('Score Technique', ascending=False, na_position='last')
+
     return display
 
 
 def style_decisions_table(df: pd.DataFrame):
-    """Applique les couleurs institutionnelles au tableau."""
+    """Applique les couleurs institutionnelles au tableau (seuils alignés méthodologie)."""
     def color_decision(val):
         if val == 'BUY':
             return 'background-color: #D1FAE5; color: #065F46; font-weight: 600;'
@@ -553,90 +812,163 @@ def style_decisions_table(df: pd.DataFrame):
             return 'background-color: #FEF3C7; color: #92400E; font-weight: 600;'
         else:  # INSUFFICIENT
             return 'background-color: #F3F4F6; color: #4B5563; font-weight: 600;'
-    
+
     def color_score(val):
-        """Gradient pour le score : rouge → jaune → vert."""
+        """Gradient aligné sur la classification : ≥60 vert, 40–59 ambre, <40 rouge."""
         if pd.isna(val):
-            return ''
-        if val >= 70:
+            return 'color: #9CA3AF;'
+        if val >= 60:
             return 'background-color: #D1FAE5; color: #065F46;'
-        elif val >= 50:
+        elif val >= 40:
             return 'background-color: #FEF3C7; color: #92400E;'
         else:
             return 'background-color: #FEE2E2; color: #991B1B;'
-    
-    def color_confidence(val):
-        """Gradient pour la confiance."""
-        if pd.isna(val):
-            return ''
-        if val >= 70:
-            return 'background-color: #D1FAE5; color: #065F46;'
-        elif val >= 50:
-            return 'background-color: #FEF3C7; color: #92400E;'
-        else:
-            return 'background-color: #FEE2E2; color: #991B1B;'
-    
-    styled = df.style.map(color_decision, subset=['Décision']) \
-                     .map(color_score, subset=['Score Global']) \
-                     .map(color_confidence, subset=['Confiance (%)'])
-    
+
+    styled = df.style.map(color_decision, subset=['Décision'])
+    if 'Score Technique' in df.columns:
+        styled = styled.map(color_score, subset=['Score Technique'])
+
+    # Formatage du score sans casser les NaN
+    styled = styled.format({'Score Technique': lambda v: '—' if pd.isna(v) else f'{v:.1f}'})
+
     return styled
 
 
 def render_company_details(company: str, decisions_df: pd.DataFrame):
-    """Affiche les détails d'une société sélectionnée."""
+    """Affiche les détails d'une société sélectionnée (centré, orienté Flash Momentum)."""
     row = decisions_df[decisions_df['Company'] == company].iloc[0]
-    
+
     decision = row['Decision']
     if decision == 'INSUFFICIENT_DATA':
         decision = 'INSUFFICIENT'
-    
-    st.markdown(f"### 📊 Détails : **{company}**")
-    
-    # Métriques principales
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        decision_color = {
-            'BUY': '🟢',
-            'HOLD': '🟡',
-            'SELL': '🔴',
-            'INSUFFICIENT': '⚪'
-        }.get(decision, '')
-        st.metric("Décision", f"{decision_color} {decision}")
-    
-    with col2:
-        score = row.get('Overall_Score', 0)
-        st.metric("Score Global", f"{score:.1f} / 100")
-    
-    with col3:
-        conf = row.get('Confidence', 0)
-        st.metric("Confiance", f"{conf:.0f} %")
-    
-    # Signaux détaillés
-    with st.expander("📋 Signaux Techniques"):
-        signals = row.get('Signals', '')
-        if pd.notna(signals) and signals and signals != 'no valid signals':
-            for sig in str(signals).split(' | '):
-                st.write(f"• {sig}")
-        else:
-            st.info("Aucun signal valide disponible")
-    
-    # Informations supplémentaires
-    with st.expander("ℹ️ Informations Complémentaires"):
-        info_cols = st.columns(2)
-        
-        with info_cols[0]:
+
+    def _fmt(value, suffix="", decimals=1):
+        """Formatage sûr (évite l'affichage de 'nan')."""
+        if value is None or pd.isna(value):
+            return "N/A"
+        return f"{value:.{decimals}f}{suffix}"
+
+    # Affichage CENTRÉ : colonne centrale plus large, marges latérales
+    _left, center, _right = st.columns([1, 4, 1])
+
+    with center:
+        st.markdown(
+            f"<h3 style='text-align:center;'>📊 Détails : {company}</h3>",
+            unsafe_allow_html=True
+        )
+
+        # ── Métriques principales (Flash Momentum) ──
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            decision_color = {'BUY': '🟢', 'HOLD': '🟡', 'SELL': '🔴', 'INSUFFICIENT': '⚪'}.get(decision, '')
+            st.metric("Décision", f"{decision_color} {decision}")
+        with col2:
+            st.metric("Score Technique", f"{_fmt(row.get('Technical_Score', pd.NA))} / 100")
+        with col3:
+            _sym = row.get('Score_Symbol', '')
+            _cls = row.get('Score_Class', '') or _class_name_for_symbol(_sym)
+            st.metric(
+                "Classe",
+                _sym if isinstance(_sym, str) and _sym else "—",
+                help=f"{_sym} = {_cls}" if _sym and _cls else None,
+            )
+
+        coverage = row.get('Data_Coverage', None)
+        if coverage is not None and pd.notna(coverage):
+            st.caption(f"📶 Couverture des données : **{coverage}**")
+
+        st.divider()
+
+        # ── Signaux Techniques = détail des points par pilier Flash Momentum ──
+        st.markdown("##### 📋 Signaux Techniques — points par pilier (Flash Momentum)")
+
+        pillars = [
+            ("Volume (RVOL + OBV)", row.get('Flash_Vol_Score', pd.NA), 20),
+            ("RSI (momentum)",      row.get('Flash_RSI_Score', pd.NA), 25),
+            ("Moyennes mobiles",    row.get('Flash_MM_Score', pd.NA),  35),
+            ("MACD",                row.get('Flash_MACD_Score', pd.NA), 20),
+        ]
+        pillar_df = pd.DataFrame([
+            {
+                "Pilier": name,
+                "Points": "—" if pd.isna(val) else f"{int(round(val))} / {maxp}",
+            }
+            for name, val, maxp in pillars
+        ])
+        st.dataframe(pillar_df, use_container_width=True, hide_index=True)
+
+        total = row.get('Technical_Score', pd.NA)
+        st.markdown(f"**Score technique total : {_fmt(total)} / 100** — *{row.get('Score_Class', 'N/A')}*")
+        if pd.notna(total):
+            st.progress(min(1.0, max(0.0, float(total) / 100.0)))
+
+        # Traçabilité OBV / Golden Cross (contexte des piliers)
+        obv = row.get('OBV_Trend', None)
+        gc = row.get('Golden_Cross_Recent', False)
+        traces = []
+        if obv in ('rising', 'neutral', 'falling'):
+            traces.append({'rising': 'OBV en hausse', 'neutral': 'OBV neutre', 'falling': 'OBV en baisse'}[obv])
+        if bool(gc):
+            traces.append("Golden Cross récent (MM50 > MM200)")
+        if traces:
+            st.caption("🔎 " + " · ".join(traces))
+
+        st.divider()
+
+        # ── Couverture des indicateurs + détail indicateur-par-indicateur (via la trace) ──
+        trace_df = st.session_state.get('analysis_trace')
+        trow = None
+        if trace_df is not None and len(trace_df):
+            match = trace_df[trace_df['Company'] == company]
+            if len(match):
+                trow = match.iloc[0]
+
+        if trow is not None:
+            from src.traceability import company_indicator_table, indicator_coverage
+            from config.methodology import FLASH_MOMENTUM_CONFIG
+
+            n_ok, n_tot, missing = indicator_coverage(trow, FLASH_MOMENTUM_CONFIG)
+            pct = (n_ok / n_tot * 100) if n_tot else 0.0
+
+            st.markdown("##### 🧪 Couverture des indicateurs")
+            cova, covb = st.columns([1, 2])
+            with cova:
+                st.metric("Indicateurs calculés", f"{n_ok} / {n_tot}")
+                st.caption(f"Couverture : {pct:.0f} %")
+            with covb:
+                if missing:
+                    st.warning("Indisponibles : " + ", ".join(missing))
+                else:
+                    st.success("Tous les indicateurs attendus sont calculés.")
+
+            st.markdown("##### 🧾 Détail des indicateurs")
+            ind_table = pd.DataFrame(company_indicator_table(trow))
+            st.dataframe(ind_table, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── Informations complémentaires ──
+        st.markdown("##### ℹ️ Informations complémentaires")
+        info1, info2 = st.columns(2)
+        with info1:
+            n_ok = row.get('Indicators_Computed', None)
+            n_tot = row.get('Indicators_Total', None)
+            if n_ok is not None and n_tot:
+                st.write(f"**Indicateurs calculés :** {int(n_ok)} / {int(n_tot)}")
+                st.caption("Indicateurs du score Flash Momentum : RVOL, OBV, RSI-14, "
+                           "SMA-20/50/200, MACD, MACD-Signal.")
             if 'Cours' in row.index and pd.notna(row['Cours']):
                 st.write(f"**Dernier cours :** {row['Cours']:.2f} MAD")
-            if 'Date' in row.index and pd.notna(row['Date']):
-                st.write(f"**Date :** {row['Date']}")
-        
-        with info_cols[1]:
-            if 'Data_Coverage' in row.index and pd.notna(row['Data_Coverage']):
-                st.write(f"**Couverture données :** {row['Data_Coverage']}")
-            if 'Free_Float' in row.index and pd.notna(row['Free_Float']):
-                st.write(f"**Free Float :** {row['Free_Float']:.1%}")
+        with info2:
+            first_d = row.get('First_Price_Date', None)
+            last_d = row.get('Last_Price_Date', None)
+            n_sess = row.get('N_Sessions', None)
+            if first_d not in (None, 'N/A'):
+                st.write(f"**1ère séance analysée :** {first_d}")
+            if last_d not in (None, 'N/A'):
+                st.write(f"**Dernière séance :** {last_d}")
+            if n_sess is not None:
+                st.write(f"**Nombre de séances :** {int(n_sess)}")
 
 
 def render_progress():
@@ -667,9 +999,27 @@ def render_progress():
     st.markdown(progress_text)
 
 
+def _valider_extension_excel(uploaded_file) -> bool:
+    """Vérifie que le fichier a une extension Excel valide (.xlsx / .xls)."""
+    name = (uploaded_file.name or '').lower()
+    if not name.endswith(('.xlsx', '.xls')):
+        st.error("❌ **Format de fichier non supporté**")
+        st.warning("⚠️ Seuls les fichiers Excel (**.xlsx** ou **.xls**) sont acceptés. "
+                   f"Fichier reçu : `{uploaded_file.name}`")
+        return False
+    return True
+
+
 def import_market_data(uploaded_file):
     """Import et validation des données marché."""
-    with st.spinner("⏳ Import des données marché en cours..."):
+    # Validation de l'extension avant tout traitement
+    if not _valider_extension_excel(uploaded_file):
+        return
+    _big = len(uploaded_file.getvalue()) > 1_000_000  # > ~1 Mo → gros fichier
+    _spin = ("⏳ Importation en cours… Le fichier contient beaucoup de données et son "
+             "traitement peut prendre quelques instants. Veuillez patienter."
+             if _big else "⏳ Import des données marché en cours...")
+    with st.spinner(_spin):
         try:
             # Fichier temporaire
             suffix = '.xlsx' if uploaded_file.name.endswith('.xlsx') else '.xls'
@@ -700,20 +1050,50 @@ def import_market_data(uploaded_file):
             # Nettoyage
             Path(temp_path).unlink(missing_ok=True)
             
-            # Message de succès avec détails
-            n_companies = unified['Company'].nunique()
+            # ── Métadonnées d'import (transparence pour le gestionnaire) ──
+            n_companies = unified['CODE_ISIN'].nunique()
             n_records = len(unified)
+            n_dates = unified['Date'].nunique() if 'Date' in unified.columns else 0
             date_min = unified['Date'].min() if 'Date' in unified.columns else 'N/A'
             date_max = unified['Date'].max() if 'Date' in unified.columns else 'N/A'
+            included = [s['canonical_variable'] or s['name'] for s in report.get('sheets_included', [])]
+            excluded = [(s['name'], s.get('reason', '')) for s in report.get('sheets_excluded', [])]
             
-            st.success(f"✅ Données marché importées : **{n_companies} sociétés**, **{n_records:,} observations**")
-            st.info(f"📅 Période couverte : {date_min} → {date_max}")
+            st.success(
+                f"✅ **Données marché importées** — "
+                f"{n_companies} sociétés · {n_records:,} observations · {n_dates} séances"
+            )
             
-            # Diagnostic: Afficher quelques exemples
-            with st.expander("📊 Aperçu des données importées"):
-                st.write(f"**Colonnes disponibles :** {', '.join(unified.columns.tolist())}")
-                st.write(f"**Sociétés :** {', '.join(unified['Company'].unique()[:5].tolist())}{'...' if n_companies > 5 else ''}")
-                st.dataframe(unified.head(10), use_container_width=True)
+            # Cartes de métadonnées
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Sociétés", n_companies)
+            m2.metric("Observations", f"{n_records:,}")
+            m3.metric("Séances", n_dates)
+            m4.metric("Feuilles retenues", len(included))
+            
+            with st.expander("📊 Détails de l'import marché"):
+                # Période couverte
+                st.markdown("##### 📅 Période couverte")
+                dmin = date_min.date() if hasattr(date_min, 'date') else date_min
+                dmax = date_max.date() if hasattr(date_max, 'date') else date_max
+                st.caption(f"Du **{dmin}** au **{dmax}** · {n_dates} séances")
+
+                # Feuilles (retenues + écartées) sous forme de tableau
+                st.markdown("##### 🗂️ Feuilles du classeur")
+                sheet_rows = [{'Feuille': v, 'Statut': '✅ Retenue', 'Détail': 'Variable marché'} for v in included]
+                sheet_rows += [{'Feuille': name, 'Statut': '⊗ Écartée', 'Détail': reason} for name, reason in excluded]
+                st.dataframe(
+                    pd.DataFrame(sheet_rows),
+                    use_container_width=True, hide_index=True
+                )
+
+                # Colonnes
+                st.markdown("##### 🧾 Colonnes disponibles")
+                st.caption(', '.join(unified.columns.tolist()))
+
+                # Aperçu des données
+                st.markdown("##### 🔍 Aperçu des données (10 lignes)")
+                st.dataframe(unified.head(10), use_container_width=True, hide_index=True)
             
             st.rerun()
             
@@ -730,7 +1110,14 @@ def import_market_data(uploaded_file):
 
 def import_composition_data(uploaded_file):
     """Import de la composition des indices (version full - sans filtrage préalable)."""
-    with st.spinner("⏳ Import de la composition des indices en cours..."):
+    # Validation de l'extension avant tout traitement
+    if not _valider_extension_excel(uploaded_file):
+        return
+    _big = len(uploaded_file.getvalue()) > 1_000_000  # > ~1 Mo → gros fichier
+    _spin = ("⏳ Importation en cours… Le fichier contient beaucoup de données et son "
+             "traitement peut prendre quelques instants. Veuillez patienter."
+             if _big else "⏳ Import de la composition des indices en cours...")
+    with st.spinner(_spin):
         try:
             # Fichier temporaire
             suffix = '.xlsx' if uploaded_file.name.endswith('.xlsx') else '.xls'
@@ -772,24 +1159,52 @@ def import_composition_data(uploaded_file):
             # Nettoyage
             Path(temp_path).unlink(missing_ok=True)
             
-            # Message de succès avec détails
+            # ── Métadonnées d'import (transparence pour le gestionnaire) ──
             n_indices = len(available_indices)
-            n_securities = len(comp_df_full)
+            n_observations = len(comp_df_full)
+            n_societes = comp_df_full['CODE_ISIN'].nunique() if 'CODE_ISIN' in comp_df_full.columns else n_observations
+            n_feuilles = len(report.get('sheets_processed', []))
             
-            st.success(f"✅ Composition importée : **{n_securities} titres**, **{n_indices} indices**")
+            st.success(
+                f"✅ **Composition importée** — "
+                f"{n_observations} observations · {n_societes} sociétés · {n_indices} indices"
+            )
             
-            # Diagnostic: Afficher détails
-            with st.expander("📊 Aperçu de la composition"):
-                st.write(f"**Indices disponibles :** {', '.join(available_indices)}")
-                st.write(f"**Colonnes disponibles :** {', '.join(comp_df_full.columns.tolist())}")
-                
-                if len(available_indices) > 0:
-                    st.write("\n**Répartition par indice :**")
-                    for idx in available_indices:
-                        count = (comp_df_full['Indice'] == idx).sum()
-                        st.write(f"  • {idx}: {count} titres")
-                
-                st.dataframe(comp_df_full.head(10), use_container_width=True)
+            # Cartes de métadonnées
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Observations", f"{n_observations:,}")
+            c2.metric("Sociétés (ISIN)", n_societes)
+            c3.metric("Indices", n_indices)
+            c4.metric("Feuilles lues", n_feuilles)
+            
+            with st.expander("📊 Détails de l'import composition"):
+                # Répartition par indice sous forme de tableau
+                st.markdown("##### 🎯 Répartition par indice")
+                rep_df = pd.DataFrame([
+                    {'Indice': idx, 'Titres': int((comp_df_full['Indice'] == idx).sum())}
+                    for idx in available_indices
+                ]).sort_values('Titres', ascending=False)
+                st.dataframe(rep_df, use_container_width=True, hide_index=True)
+
+                # Feuilles ignorées (le cas échéant)
+                skipped = report.get('sheets_skipped', [])
+                if skipped:
+                    st.markdown("##### ⚠️ Feuilles ignorées")
+                    st.dataframe(
+                        pd.DataFrame([
+                            {'Feuille': s['sheet'], 'Raison': s.get('reason', '')}
+                            for s in skipped
+                        ]),
+                        use_container_width=True, hide_index=True
+                    )
+
+                # Colonnes
+                st.markdown("##### 🧾 Colonnes disponibles")
+                st.caption(', '.join(comp_df_full.columns.tolist()))
+
+                # Aperçu des données
+                st.markdown("##### 🔍 Aperçu des données (10 lignes)")
+                st.dataframe(comp_df_full.head(10), use_container_width=True, hide_index=True)
             
             st.info(f"💡 **Prochaine étape** : Configurez les critères de filtrage ci-dessous avant de lancer l'analyse.")
             
@@ -823,16 +1238,14 @@ def run_analysis():
         market_df = st.session_state['unified_data']
         comp_df = st.session_state['composition_data']  # Déjà filtré sur l'indice sélectionné
         
-        # Récupérer les critères sélectionnés dans l'UI (override de methodology.py)
+        # Indice de référence sélectionné dans l'UI (MASI ou MASI 20)
         selected_index = st.session_state.get('selected_index', 'MASI 20')
-        selected_ff_min = st.session_state.get('selected_ff_min', 0.10)
-        selected_percentile = st.session_state.get('selected_ffmc_percentile', 25)
         
         # Progress bar
         progress = st.progress(0, text="Initialisation...")
         
-        # Afficher les critères utilisés
-        progress.progress(5, text=f"📋 Critères: {selected_index}, FF≥{selected_ff_min*100:.0f}%, p{selected_percentile}")
+        # Afficher l'indice utilisé
+        progress.progress(5, text=f"📋 Indice de référence : {selected_index}")
         
         # Étape 1: Normalisation (déjà faite à l'import)
         st.session_state['analysis_step'] = 1
@@ -869,38 +1282,51 @@ def run_analysis():
         progress.progress(40, text="⏳ Calcul des métriques de marché...")
         # Les métriques sont calculées dans apply_dynamic_filter
         
-        # Étape 4: Filtrage dynamique (avec critères UI)
+        # Étape 4: Filtrage dynamique (règle selon l'indice choisi)
         st.session_state['analysis_step'] = 4
-        progress.progress(50, text=f"⏳ Filtrage dynamique ({selected_index}, FF≥{selected_ff_min*100:.0f}%)...")
+        progress.progress(50, text=f"⏳ Filtrage dynamique ({selected_index})...")
         
-        # Passer les critères UI au pipeline (override de methodology.py)
+        # Règle de sélection : MASI → top-N par poids flottant ; MASI 20 → tous les titres
         investable, filter_report = pipeline.apply_dynamic_filter(
             unified_clean, 
             comp_df,
-            override_ff_min=selected_ff_min,
-            override_percentile=selected_percentile
+            index_name=selected_index
         )
         
         n_investable = len(investable['Company'].unique()) if len(investable) > 0 else 0
         progress.progress(60, text=f"✓ Filtrage dynamique terminé ({n_investable} titres investissables)")
         
+        # ── Bilan de transparence : intersection marché ∩ indice (jointure par ISIN) ──
+        # Ensembles pour des MOTIFS de rejet exacts en Traçabilité
+        st.session_state['market_isins_raw'] = set(market_df['CODE_ISIN'].dropna().unique())
+        st.session_state['market_isins_quality'] = set(unified_clean['CODE_ISIN'].dropna().unique())
+
+        market_isins = set(unified_clean['CODE_ISIN'].dropna().unique())
+        index_isins = set(comp_df['CODE_ISIN'].dropna().unique())
+        kept_isins = market_isins & index_isins
+        st.session_state['intersection_stats'] = {
+            'index_name': selected_index,
+            'market': len(market_isins),
+            'index': len(index_isins),
+            'kept': len(kept_isins),
+            'index_absent_from_market': len(index_isins - market_isins),
+            'market_outside_index': len(market_isins - index_isins),
+            'after_gates': int(investable['CODE_ISIN'].nunique()) if len(investable) > 0 else 0,
+        }
+        
         # Diagnostic: Vérifier si l'univers investissable est vide
         if len(investable) == 0:
             raise ValueError(
                 f"❌ Aucun titre n'a passé le filtrage dynamique.\n\n"
-                f"Critères appliqués:\n"
-                f"- Indice: {selected_index}\n"
-                f"- Free Float ≥ {selected_ff_min*100:.0f}%\n"
-                f"- Capitalisation ≥ p{selected_percentile}\n\n"
-                f"Raisons possibles:\n"
-                f"- Critères trop stricts pour cet indice\n"
-                f"- Données de marché insuffisantes\n\n"
-                f"Solutions: Ajuster les critères et relancer l'analyse."
+                f"Indice sélectionné : {selected_index}\n\n"
+                f"Raison probable : aucun titre commun (par code ISIN) entre les données "
+                f"marché et l'indice choisi.\n\n"
+                f"Vérifiez que le fichier marché contient bien l'historique des titres de l'indice."
             )
         
         # Étape 5: Indicateurs techniques
         st.session_state['analysis_step'] = 5
-        progress.progress(65, text="⏳ Calcul des indicateurs techniques (7 familles)...")
+        progress.progress(65, text="⏳ Calcul des indicateurs techniques...")
         indicators, _ = pipeline.compute_indicators(investable)
         progress.progress(75, text="✓ Indicateurs techniques calculés")
         
@@ -916,17 +1342,30 @@ def run_analysis():
         decisions, summary, _ = pipeline.make_decisions(signals)
         progress.progress(100, text="✅ Analyse terminée")
         
-        # Stockage des résultats + critères utilisés
+        # Métadonnées de traçabilité TEMPORAIRES (session-scoped, écrasées à chaque analyse)
+        # Restitution pure des colonnes déjà calculées — aucune logique métier dupliquée.
+        from src.traceability import build_company_traces
+        from config.methodology import FLASH_MOMENTUM_CONFIG
+        trace_df = build_company_traces(decisions, FLASH_MOMENTUM_CONFIG)
+        st.session_state['analysis_trace'] = trace_df
+        try:
+            trace_path = ROOT / 'data' / '.app_state' / 'analysis_trace.parquet'
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
+            trace_df.to_parquet(trace_path, compression='snappy', index=False)
+        except Exception:
+            pass  # la trace session reste disponible même si l'écriture Parquet échoue
+
+        # Stockage des résultats + critères + rapport de filtrage (pour la Traçabilité)
         st.session_state['decisions_summary'] = summary
         st.session_state['pipeline_results'] = {
             'decisions': decisions,
             'signals': signals,
             'indicators': indicators
         }
+        st.session_state['filter_report'] = filter_report
         st.session_state['analysis_criteria'] = {
             'index': selected_index,
-            'ff_min': selected_ff_min,
-            'percentile': selected_percentile
+            'selection_rule': filter_report.get('selection_rule', ''),
         }
         st.session_state['pipeline_complete'] = True
         st.session_state['analysis_in_progress'] = False

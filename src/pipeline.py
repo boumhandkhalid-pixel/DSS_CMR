@@ -40,6 +40,8 @@ from config.methodology import (
     CONFIDENCE_WEIGHTS,
     DECISION_THRESHOLDS,
     MIN_COVERAGE_FOR_DECISION,
+    FLASH_MOMENTUM_CONFIG,
+    FLASH_DECISION_THRESHOLDS,
 )
 
 
@@ -194,12 +196,21 @@ class DSS_Pipeline:
         
         Each indicator will manage its own minimum observations.
         """
-        from src.validation import filter_companies_by_temporal_quality
+        from src.validation import filter_companies_by_temporal_quality, drop_empty_companies
         
+        # Étape 0 : nettoyage — retirer les sociétés à Cours/Volume entièrement vides ou nuls
+        cleaned, clean_report = drop_empty_companies(unified_df)
+        n_removed = clean_report.get('companies_removed', 0)
+        if n_removed:
+            print(f"[INFO] Nettoyage pré-analyse : {n_removed} société(s) vide(s)/nulle(s) retirée(s) "
+                  f"({clean_report['companies_before']} → {clean_report['companies_after']})")
+        
+        # Contrôle qualité temporelle (continuité, gap ≤ MAX_GAP_DAYS)
         filtered, report = filter_companies_by_temporal_quality(
-            unified_df,
+            cleaned,
             max_gap_days=MAX_GAP_DAYS  # 7 days
         )
+        report['cleanup'] = clean_report
         
         self.reports['quality_filter'] = report
         
@@ -213,92 +224,99 @@ class DSS_Pipeline:
         self,
         unified_df: pd.DataFrame,
         composition_df: pd.DataFrame,
-        override_ff_min: Optional[float] = None,
-        override_percentile: Optional[int] = None
+        index_name: Optional[str] = None,
+        top_n: Optional[int] = None
     ) -> Tuple[pd.DataFrame, dict]:
         """
-        Apply dynamic investability filter based on composition.
-        
+        Filtrage dynamique de l'univers investissable (règles encadrant).
+
+        Deux indices supportés :
+          - MASI    : on retient les N PREMIÈRES sociétés par POIDS FLOTTANT (top-N).
+          - MASI 20 : on retient TOUS les titres de l'indice.
+
+        La capitalisation flottante n'est PLUS une porte de filtrage.
+
         Args:
-            unified_df: Quality-filtered market data
-            composition_df: Index composition data
-            override_ff_min: Override min_free_float_factor from UI (optional)
-            override_percentile: Override min_ff_market_cap_percentile from UI (optional)
-        
+            unified_df: données marché après contrôle qualité
+            composition_df: composition déjà filtrée sur l'indice sélectionné
+            index_name: indice de référence (défaut = FILTER_CONFIG['index'])
+            top_n: override du nombre de sociétés pour le MASI (défaut = config)
+
         Returns:
             (investable_df, filter_report)
         """
+        from src.parsers.composition_parser import normalize_index_name
 
-        print(f"[DEBUG] composition_df shape: {composition_df.shape}")
-        print(f"[DEBUG] composition_df columns: {list(composition_df.columns)}")
-        if 'Indice' in composition_df.columns:
-            print(f"[DEBUG] Valeurs uniques Indice: {composition_df['Indice'].unique()}")
+        if index_name is None:
+            index_name = FILTER_CONFIG['index']
 
-        # Compute dynamic thresholds from composition
-        thresholds = compute_filter_thresholds(composition_df)
-        
-        # Override avec critères UI si fournis
-        if override_ff_min is not None:
-            min_ff = override_ff_min
-            print(f"[INFO] ✓ Free Float minimum (UI override): {min_ff*100:.0f}%")
+        norm_target = normalize_index_name(index_name)
+        norm_masi = normalize_index_name('MASI')
+        norm_masi20 = normalize_index_name('MASI 20')
+
+        print(f"[INFO] Filtrage dynamique — indice cible : '{index_name}'")
+        print(f"[INFO] Composition reçue : {len(composition_df)} titres, "
+              f"colonnes={list(composition_df.columns)}")
+
+        comp = composition_df.copy()
+
+        # ── Règle de sélection selon l'indice ──
+        if norm_target == norm_masi20:
+            # MASI 20 : tous les titres de l'indice
+            selected = comp
+            rule = f"MASI 20 : tous les titres de l'indice ({len(selected)})"
+        elif norm_target == norm_masi:
+            # MASI : top-N par poids flottant
+            n = int(top_n) if top_n else int(FILTER_CONFIG.get('masi_top_n_by_weight', 40))
+            if 'Weight' in comp.columns:
+                selected = comp.sort_values('Weight', ascending=False).head(n)
+            else:
+                selected = comp.head(n)
+            rule = f"MASI : {len(selected)} premières sociétés par poids flottant (top {n})"
         else:
-            min_ff = FILTER_CONFIG['min_free_float_factor']
-        
-        if override_percentile is not None:
-            # Recalculer le seuil FF_MarketCap avec le nouveau percentile
-            idx = composition_df["FF_MarketCap"].dropna()
-            min_ffmc = float(np.percentile(idx, override_percentile))
-            print(f"[INFO] ✓ FF MarketCap minimum (UI override): {min_ffmc:,.0f} MAD (p{override_percentile})")
-        else:
-            min_ffmc = thresholds['min_ff_market_cap']
-        
-        # Apply filters
-        filtered = unified_df.copy()
-        
-        # Gate 1: Must belong to the index
-        index_isins = set(composition_df['CODE_ISIN'].unique())
-        before_gate1 = len(filtered)
-        filtered = filtered[filtered['CODE_ISIN'].isin(index_isins)].copy()
-        after_gate1 = len(filtered)
-        print(f"[INFO] Gate 1 (Indice) : {before_gate1} → {after_gate1} titres ({before_gate1 - after_gate1} exclus)")
-        
-        # Merge composition data
-        comp_cols = ['CODE_ISIN', 'FF', 'FF_MarketCap', 'Weight']
-        filtered = filtered.merge(
-            composition_df[comp_cols],
-            on='CODE_ISIN',
-            how='left'
-        )
-        
-        # Gate 2: Free Float Factor >= threshold
-        before_gate2 = len(filtered)
-        filtered = filtered[filtered['FF'] >= min_ff].copy()
-        after_gate2 = len(filtered)
-        print(f"[INFO] Gate 2 (FF >= {min_ff*100:.0f}%) : {before_gate2} → {after_gate2} titres ({before_gate2 - after_gate2} exclus)")
-        
-        # Gate 3: FF Market Cap >= dynamic threshold
-        before_gate3 = len(filtered)
-        filtered = filtered[filtered['FF_MarketCap'] >= min_ffmc].copy()
-        after_gate3 = len(filtered)
-        print(f"[INFO] Gate 3 (Cap >= {min_ffmc:,.0f}) : {before_gate3} → {after_gate3} titres ({before_gate3 - after_gate3} exclus)")
-        
+            # Indice non supporté → on retient tout par sécurité, mais on le signale
+            selected = comp
+            rule = f"{index_name} : indice non supporté officiellement — tous les titres retenus"
+            print(f"[WARN] Indice '{index_name}' non supporté (attendus : MASI, MASI 20).")
+
+        print(f"[INFO] Règle appliquée : {rule}")
+
+        selected_isins = set(selected['CODE_ISIN'].dropna().unique())
+
+        # Gate 1 : jointure par ISIN (le titre doit exister dans le marché)
+        before = len(unified_df)
+        filtered = unified_df[unified_df['CODE_ISIN'].isin(selected_isins)].copy()
+        after = len(filtered)
+        print(f"[INFO] Jointure marché ∩ sélection : {before} → {after} lignes "
+              f"({filtered['CODE_ISIN'].nunique()} sociétés retenues)")
+
+        # Fusion des colonnes de composition (analyse : poids, facteur/cap flottants)
+        comp_cols = [c for c in ['CODE_ISIN', 'FF', 'FF_MarketCap', 'Weight'] if c in selected.columns]
+        filtered = filtered.merge(selected[comp_cols], on='CODE_ISIN', how='left')
+
+        # Seuils de contexte (reporting uniquement, aucune porte)
+        try:
+            thresholds = compute_filter_thresholds(selected)
+        except Exception:
+            thresholds = {}
+
         report = {
+            'index': index_name,
+            'selection_rule': rule,
             'input_rows': len(unified_df),
             'output_rows': len(filtered),
             'input_companies': unified_df['CODE_ISIN'].nunique(),
+            'selected_companies': len(selected_isins),
             'output_companies': filtered['CODE_ISIN'].nunique(),
             'thresholds': thresholds,
-            'applied_ff_min': min_ff,
-            'applied_ffmc_min': min_ffmc,
-            'applied_percentile': override_percentile if override_percentile else FILTER_CONFIG['min_ff_market_cap_percentile'],
         }
-        
+
         self.reports['dynamic_filter'] = report
-        
+
         # Save to Parquet
         out_path = str(self.data_dir / 'investable_universe.parquet')
         save_unified_dataset(filtered, out_path)
-        
+
         return filtered, report
     
     def compute_indicators(self, investable_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
@@ -348,13 +366,18 @@ class DSS_Pipeline:
             (signals_df, compute_report)
         """
         from src.signals import compute_signals_and_confidence
+        from src.scoring_flash import compute_flash_scores
         
+        # Vue analytique : signaux individuels {-1,0,+1}, familles, confiance (conservés)
         signals_df = compute_signals_and_confidence(
             indicators_df,
             signal_rules=SIGNAL_RULES,
             score_weights=SCORE_WEIGHTS,
             confidence_weights=CONFIDENCE_WEIGHTS
         )
+        
+        # Score technique officiel « Flash Momentum » (0–100) — source de vérité métier
+        signals_df = compute_flash_scores(signals_df, FLASH_MOMENTUM_CONFIG)
         
         report = {
             'input_rows': len(indicators_df),
@@ -363,6 +386,7 @@ class DSS_Pipeline:
             'family_scores_computed': 3,
             'overall_score_rows': signals_df['Overall_Score'].notna().sum(),
             'confidence_rows': signals_df['Confidence'].notna().sum(),
+            'technical_score_rows': signals_df['Technical_Score'].notna().sum(),
         }
         
         self.reports['signals'] = report
@@ -387,7 +411,7 @@ class DSS_Pipeline:
         
         decisions_df = make_investment_decisions(
             signals_df,
-            thresholds=DECISION_THRESHOLDS,
+            flash_thresholds=FLASH_DECISION_THRESHOLDS,
             min_coverage=MIN_COVERAGE_FOR_DECISION
         )
         

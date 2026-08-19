@@ -46,38 +46,32 @@ import numpy as np
 
 FILTER_CONFIG = {
     # Gate 1 : univers d'indice — les titres doivent appartenir à cet indice.
-    # Configurable : remplacer "MASI" par "MASI 20", "MASI ESG", etc.
-    # Le gestionnaire de portefeuille peut modifier ceci dans l'UI sans toucher au code.
+    # ⚠️ Décision encadrant : SEULS deux indices de référence sont supportés :
+    #    - "MASI"    → on retient les N PREMIÈRES sociétés par POIDS FLOTTANT (top-N).
+    #    - "MASI 20" → on retient TOUS les titres listés dans la feuille (≈ 20).
+    #    Les autres indices (MASI ESG, sectoriels, etc.) sont ignorés.
     "index": "MASI 20",
 
-    # Gate 2 : Facteur de Flottant (Free Float) — valeur minimale absolue.
-    # 0.20 correspond au seuil naturel inférieur dans les données BVC.
-    # En dessous de 0.20, moins de 20% des actions sont librement négociables —
-    # tout ordre modeste fait bouger le prix (flottant faible = illiquide en pratique).
-    # C'est un seuil absolu, pas basé sur percentile, car
-    # 0.20 a une signification financière claire indépendante de la distribution.
-    "min_free_float_factor": 0.10,
+    # Indices de référence autorisés (le dropdown de l'UI ne propose que ceux-ci).
+    "supported_indices": ["MASI", "MASI 20"],
 
-    # Gate 3 : Capitalisation Flottante (Free Float Market Cap) — exprimée en PERCENTILE.
-    # À l'exécution, compute_filter_thresholds() convertit cela en valeur
-    # MAD réelle à partir du fichier de composition téléchargé.
-    # p25 élimine seulement le quartile inférieur des micro-capitalisations.
-    # → NE PAS coder en dur la valeur absolue ici.
+    # Règle de sélection propre à chaque indice.
+    #   MASI    : top-N par poids flottant (Weight), N configurable ci-dessous.
+    #   MASI 20 : tous les titres de la feuille (aucun filtrage supplémentaire).
+    "selection_rules": {
+        "MASI":    {"mode": "top_n_by_weight", "n": 40},
+        "MASI 20": {"mode": "all"},
+    },
+
+    # Nombre de sociétés retenues pour le MASI (top-N par poids flottant).
+    "masi_top_n_by_weight": 40,
+
+    # ── Paramètres conservés pour compatibilité / reporting (NON utilisés comme portes) ──
+    # Le Facteur flottant et la Capitalisation flottante restent calculés et disponibles
+    # pour l'analyse, mais ne filtrent plus l'univers (décision encadrant).
+    "min_float_weight": 0.0,
     "min_ff_market_cap_percentile": 25,
-
-    # Conservé pour référence (calculé à partir du fichier 2026-07-31, n=79 MASI) :
-    # min_ff_market_cap ≈ 218_136_064 MAD au p25
-    # Cette valeur différera lors du téléchargement d'un nouveau fichier de composition.
-
-    # Capping Factor : uniforme à 1.0 pour tous les 79 titres MASI dans ce fichier.
-    # Aucun pouvoir discriminant — exclu de tous les filtres.
-
-    # Poids dans l'indice (Index Weight) : utilisé comme variable de classement uniquement, PAS comme filtre dur.
-    # Un titre peut être investissable avec un poids faible.
     "weight_as_ranking_only": True,
-
-    # AvgVol20 : PAS une porte dure (fenêtre d'échantillon trop éparse pour ce jeu de données).
-    # Entre dans le score de Confiance à la place.
     "min_avg_vol20": None,
 }
 
@@ -130,7 +124,7 @@ def compute_filter_thresholds(composition_df):
     resolved = {
         # reporté tel quel (valeur absolue avec signification financière claire)
         "index":                  FILTER_CONFIG["index"],
-        "min_free_float_factor":  FILTER_CONFIG["min_free_float_factor"],
+        "min_float_weight":       FILTER_CONFIG["min_float_weight"],
 
         # calculé dynamiquement à partir du fichier téléchargé
         "min_ff_market_cap":      float(np.percentile(idx, p_ffmc)),
@@ -140,7 +134,7 @@ def compute_filter_thresholds(composition_df):
         "ff_market_cap_p25":      float(np.percentile(idx, 25)),
         "ff_market_cap_median":   float(np.percentile(idx, 50)),
         "ff_market_cap_p75":      float(np.percentile(idx, 75)),
-        "ff_median":              float(composition_df["FF"].median()),
+        "weight_median":          float(composition_df["Weight"].median()),
         "source_percentile_rule": f"FF_MarketCap >= p{p_ffmc}",
     }
     return resolved
@@ -224,6 +218,7 @@ MIN_USABLE_ROWS_SAMPLE_OVERRIDE: int = 1
 INDICATOR_PARAMS = {
     "sma_short":    20,   # Fenêtre SMA court terme
     "sma_long":     50,   # Fenêtre SMA long terme
+    "sma_very_long": 200, # Fenêtre SMA très long terme (MM200 — requis par Flash Momentum)
     "ema_short":    20,   # Fenêtre EMA
     "rsi_period":   14,   # Période de rétrospection RSI (Wilder)
     "macd_fast":    12,   # EMA rapide MACD
@@ -233,6 +228,7 @@ INDICATOR_PARAMS = {
     "hv_window":    20,   # Fenêtre Volatilité Historique (écart-type log-return)
     "hv_annualise": 252,  # jours de trading par an pour annualisation
     # VWAP : cumulatif sur la plage de dates disponible (pas de réinitialisation intraday possible)
+    # OBV : cumulatif (On-Balance Volume) ; pas de fenêtre au calcul, la tendance est évaluée au scoring
 }
 
 # Observations valides minimales requises avant qu'un indicateur puisse être calculé.
@@ -240,6 +236,7 @@ INDICATOR_PARAMS = {
 INDICATOR_MIN_OBS = {
     "SMA_20":          20,
     "SMA_50":          50,
+    "SMA_200":        200,   # MM200 — dégrade gracieusement (NaN si historique insuffisant)
     "EMA_20":          20,   # fiable après 3× l'envergure
     "RSI_14":          15,   # 14 deltas + 1 seed
     "MACD":            26,   # fenêtre EMA lente
@@ -248,10 +245,139 @@ INDICATOR_MIN_OBS = {
     "RVOL":             1,   # dégrade gracieusement ; significatif à 20
     "VWAP":             1,   # cumulatif ; dégrade gracieusement
     "HV_20":           21,   # 20 différences de log-return
+    "OBV":              2,   # cumulatif ; besoin ≥2 obs pour une variation ; tendance évaluée au scoring
 }
 
 # Calculé une fois à partir du tableau ci-dessus — importer ceci dans notebooks et src/
 # MIN_USABLE_ROWS défini dans la section 1.5 ci-dessus (= MIN_CONSECUTIVE = 14)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.5  SCORE TECHNIQUE « FLASH MOMENTUM » (0–100) — SOURCE DE VÉRITÉ MÉTIER
+# ─────────────────────────────────────────────────────────────────────────────
+# Méthodologie fournie par l'encadrant. Score additif sur 100 points, 4 piliers :
+#     • Pression des volumes ...... 20 points
+#     • RSI (momentum) ............ 25 points
+#     • Moyennes mobiles .......... 35 points
+#     • MACD ...................... 20 points
+#     TOTAL ....................... 100 points
+#
+# ⚠️ Ce score est DISTINCT :
+#   - de la couche de signaux individuels {-1,0,+1} (section 3) réservée à
+#     l'analyse valeur-par-valeur ;
+#   - du Data Coverage (qualité/complétude des données), qui reste indépendant.
+#
+# NOTES SUR DEUX ZONES NON EXPLICITEMENT DÉFINIES PAR LA MÉTHODOLOGIE (signalées) :
+#   (1) RSI dans [30, 45) : la grille encadrant définit <30=0, [45,55)=15,
+#       [55,70]=25, >70=10, mais laisse [30,45) implicite. Valeur par défaut
+#       configurable ci-dessous (rsi_weak_recovery_points), volontairement faible.
+#   (2) Position du cours « mixte » (ex : > MM20 mais < MM50) : non couverte par
+#       les 3 cas de la méthodologie. Valeur intermédiaire configurable
+#       (position_mixed_points), volontairement modérée.
+# Ces deux valeurs sont isolées ici pour être ajustées par l'encadrant sans toucher au code.
+
+FLASH_MOMENTUM_CONFIG = {
+    # Points maximum par pilier (somme = 100)
+    "pillar_max": {
+        "volume":  20,
+        "rsi":     25,
+        "ma":      35,
+        "macd":    20,
+    },
+
+    # ── Pilier VOLUME (20 pts) : 10 (Volume vs MA20 via RVOL) + 10 (tendance OBV) ──
+    "volume": {
+        # Sous-règle A — Volume du jour vs moyenne 20j (RVOL = Volume / MA20(Volume))
+        "rvol_strong": 1.5,   # RVOL > 1.5  → pression acheteuse forte → +10
+        "rvol_weak":   0.5,   # RVOL < 0.5  → volume très faible / pression vendeuse → 0
+        # 0.5 ≤ RVOL ≤ 1.5 → « dans la moyenne » → +5
+        "points_strong": 10,
+        "points_average": 5,
+        "points_weak": 0,
+
+        # Sous-règle B — Tendance de l'OBV (flux) sur une fenêtre
+        "obv_trend_window": 10,       # observations pour juger la tendance OBV (10j)
+        "obv_neutral_band": 0.05,     # bande neutre : |variation OBV normalisée| < 5% → neutre
+        "obv_points_rising": 10,      # OBV en hausse nette → +10
+        "obv_points_neutral": 5,      # OBV neutre → +5
+        "obv_points_falling": 0,      # OBV en baisse → 0
+    },
+
+    # ── Pilier RSI (25 pts) — grille encadrant ──
+    "rsi": {
+        "sweet_low": 55, "sweet_high": 70, "sweet_points": 25,   # 55 ≤ RSI ≤ 70 → 25
+        "mid_low": 45,   "mid_points": 15,                       # 45 ≤ RSI < 55 → 15
+        "overbought": 70, "overbought_points": 10,               # RSI > 70 → 10
+        "oversold": 30,   "oversold_points": 0,                  # RSI < 30 → 0
+        # [30, 45) : zone non définie par la méthodologie → valeur faible configurable (SIGNALÉE)
+        "rsi_weak_recovery_points": 5,
+    },
+
+    # ── Pilier MOYENNES MOBILES (35 pts) = position (15) + alignement (15) + golden cross (5) ──
+    "ma": {
+        # Position du cours
+        "position_all_points": 15,     # Cours > MM20, MM50 ET MM200 → +15
+        "position_20_50_points": 10,   # Cours > MM20 ET MM50 seulement → +10
+        "position_below_points": 0,    # Cours < MM20 ET MM50 → 0
+        "position_mixed_points": 5,    # cas mixte non défini par la méthodologie (SIGNALÉ)
+
+        # Alignement des moyennes
+        "alignment_full_points": 15,   # MM20 > MM50 > MM200 → +15
+        "alignment_partial_points": 8, # alignement partiel → +8
+        "alignment_bearish_points": 0, # MM20 < MM50 < MM200 → 0
+
+        # Golden Cross : MM50 croise MM200 vers le haut récemment
+        "golden_cross_points": 5,
+        "golden_cross_window": 5,      # « récent » = sur les 5 dernières séances (configurable)
+    },
+
+    # ── Pilier MACD (20 pts) — 4 états (croisement ET signe) ──
+    "macd": {
+        "above_positive_points": 20,   # MACD > Signal ET MACD > 0 → 20
+        "above_negative_points": 12,   # MACD > Signal ET MACD < 0 → 12
+        "below_positive_points": 5,    # MACD < Signal ET MACD > 0 → 5
+        "below_negative_points": 0,    # MACD < Signal ET MACD < 0 → 0
+    },
+
+    # ── Classification du score (0–100) ──
+    "classification": [
+        # (borne_min_incluse, libellé)
+        (80, "Très Fort"),
+        (60, "Modéré à Positif"),
+        (40, "Neutre"),
+        (0,  "Faible / Baissier"),
+    ],
+
+    # ── Symboles de classe (un symbole par tranche, aligné sur la classification) ──
+    #   80–100 Très Fort ......... +++
+    #   60–79  Modéré à Positif ... ++
+    #   40–59  Neutre ............. + / -
+    #   0–39   Faible / Baissier .. --
+    # (borne_min_incluse, symbole)
+    "class_symbol_scale": [
+        (80, "+++"),
+        (60, "++"),
+        (40, "+ / -"),
+        (0,  "--"),
+    ],
+
+    # ── Inputs requis pour la couverture du Technical Score (Data Coverage dédié) ──
+    # Chaque input pèse également ; l'absence (NaN) fait baisser la couverture.
+    # SMA_200 y figure → son absence baisse mécaniquement la couverture (décision encadrant).
+    "coverage_inputs": [
+        "RVOL", "OBV", "RSI_14", "SMA_20", "SMA_50", "SMA_200", "MACD", "MACD_Signal",
+    ],
+}
+
+# Mapping Technical Score → décision BUY/HOLD/SELL.
+# ⚠️ La méthodologie encadrant définit la CLASSIFICATION (grille ci-dessus) mais pas
+# de coupes explicites BUY/SELL. Ce mapping en découle directement (Neutre = HOLD,
+# Modéré+/Très Fort = BUY, Faible/Baissier = SELL) et reste configurable (SIGNALÉ).
+FLASH_DECISION_THRESHOLDS = {
+    "buy_min_score":  60,   # score ≥ 60 (Modéré à Positif et au-dessus) → BUY
+    "sell_max_score": 40,   # score < 40 (Faible / Baissier) → SELL
+    # entre 40 et 60 (Neutre) → HOLD
+    # couverture < MIN_COVERAGE_FOR_DECISION → INSUFFICIENT_DATA (voir section 5)
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. MAPPAGE DES SIGNAUX INDIVIDUELS

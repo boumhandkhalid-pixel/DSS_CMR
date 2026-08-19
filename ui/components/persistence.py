@@ -36,16 +36,19 @@ class AppStateManager:
         unified_data: Optional[pd.DataFrame] = None,
         composition_data: Optional[pd.DataFrame] = None,
         decisions_summary: Optional[pd.DataFrame] = None,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        composition_data_full: Optional[pd.DataFrame] = None
     ) -> None:
         """
         Sauvegarde l'état de la session.
         
         Args:
             unified_data: Données marché unifiées
-            composition_data: Composition de l'indice
+            composition_data: Composition filtrée sur l'indice sélectionné
             decisions_summary: Résumé des décisions
             metadata: Métadonnées (noms de fichiers, rapports, etc.)
+            composition_data_full: Composition complète (tous les indices) — nécessaire
+                pour reconstruire la section de sélection des critères après un refresh.
         """
         # Sauvegarder les DataFrames
         if unified_data is not None:
@@ -57,6 +60,12 @@ class AppStateManager:
         if composition_data is not None:
             composition_data.to_parquet(
                 self.state_dir / 'composition_data.parquet',
+                compression='snappy'
+            )
+        
+        if composition_data_full is not None:
+            composition_data_full.to_parquet(
+                self.state_dir / 'composition_data_full.parquet',
                 compression='snappy'
             )
         
@@ -73,7 +82,7 @@ class AppStateManager:
         metadata['last_updated'] = datetime.now().isoformat()
         
         with open(self.metadata_file, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
+            json.dump(metadata, f, indent=2, ensure_ascii=False, default=str)
     
     def load_session(self) -> Dict[str, Any]:
         """
@@ -85,6 +94,7 @@ class AppStateManager:
         session = {
             'unified_data': None,
             'composition_data': None,
+            'composition_data_full': None,
             'decisions_summary': None,
             'metadata': {},
             'has_saved_state': False
@@ -96,10 +106,15 @@ class AppStateManager:
             session['unified_data'] = pd.read_parquet(unified_path)
             session['has_saved_state'] = True
         
-        # Charger composition_data
+        # Charger composition_data (filtrée)
         comp_path = self.state_dir / 'composition_data.parquet'
         if comp_path.exists():
             session['composition_data'] = pd.read_parquet(comp_path)
+        
+        # Charger composition_data_full (tous les indices)
+        comp_full_path = self.state_dir / 'composition_data_full.parquet'
+        if comp_full_path.exists():
+            session['composition_data_full'] = pd.read_parquet(comp_full_path)
         
         # Charger decisions_summary
         dec_path = self.state_dir / 'decisions_summary.parquet'

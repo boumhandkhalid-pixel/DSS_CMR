@@ -497,7 +497,7 @@ Au-delà de la formation interne dispensée par la CMR sur le fonctionnement du 
 
 \vspace{0.3cm}
 \noindent
-\textbf{Note importante :} Cette section documente les indicateurs \textbf{réellement implémentés} dans le prototype du système d'aide à la décision, mis en production en août 2026. Les formules, seuils et paramètres spécifiés ci-dessous correspondent à la configuration du moteur de décision et sont extraits du code source du pipeline (fichiers \texttt{src/indicators.py}, \texttt{src/signals.py} et configuration \texttt{config/methodology.py}).
+\textbf{Note importante :} Cette section documente les indicateurs \textbf{réellement implémentés} dans le prototype du système d'aide à la décision, mis en production en août 2026. Les formules, seuils et paramètres spécifiés ci-dessous correspondent à la configuration du moteur de décision et sont extraits du code source du pipeline (fichiers \texttt{src/indicators.py}, \texttt{src/scoring\_flash.py}, \texttt{src/signals.py} et configuration \texttt{config/methodology.py}). Le moteur calcule \textbf{douze indicateurs} (dont SMA-200 et OBV) et produit un \textbf{score technique « Flash Momentum » sur 100 points}, structuré en \textbf{quatre piliers} (Volume 20, RSI 25, Moyennes mobiles 35, MACD 20), conformément à la méthodologie transmise par l'encadrant (cf. section \ref{sec:architecture-moteur}).
 
 \subsection{Moyennes mobiles : SMA et EMA}
 
@@ -758,80 +758,125 @@ où:
 \noindent
 \textbf{Rationale :} Un titre très volatil peut techniquement avoir un excellent signal (score = 80), mais comme il est aussi extrêmement imprévisible, la confiance reste basse (p.ex. 35\%). Le gestionnaire sait alors : « Signal haussier, mais très incertain — approcher avec prudence. »
 
-\subsection{Synthèse des 7 indicateurs implémentés}
+\subsection{Synthèse des indicateurs implémentés}
 
 \noindent
-Le tableau \ref{tab:indicateurs-synthese} résume les 7 indicateurs techniques intégrés au moteur de décision, leur catégorie, leur question centrale et leur condition d'activité.
+Le tableau \ref{tab:indicateurs-synthese} résume les indicateurs techniques calculés par le moteur, leur catégorie, leur condition d'activité et leur utilisation (ou non) dans le score technique Flash Momentum.
 
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{lllp{4cm}l}
+\begin{tabular}{llll}
 \toprule
-\textbf{Indicateur} & \textbf{Catégorie} & \textbf{Fenêtre} & \textbf{Question} & \textbf{Min. obs.} \\
+\textbf{Indicateur} & \textbf{Catégorie} & \textbf{Min. obs.} & \textbf{Dans le score} \\
 \midrule
-SMA-20, SMA-50  & Tendance     & 20, 50 & Quelle est la tendance ? & 20, 50 \\
-EMA-20          & Tendance     & 20    & La tendance récente accélère-t-elle ? & 20 \\
-RSI-14          & Momentum     & 14    & Suracheté / survendu ? & 15 \\
-MACD            & Momentum     & 12,26 & La dynamique s'accélère-t-elle ? & 35 \\
-RVOL            & Volume       & 20    & Le volume confirme-t-il ? & 1 \\
-VWAP            & Prix-Volume  & Cumul & Au-dessus/sous la moyenne pondérée ? & 1 \\
-HV-20           & Risque       & 20    & Volatilité normale ou élevée ? & 21 \\
+SMA-20 / SMA-50 / SMA-200 & Tendance    & 20 / 50 / 200 & Oui (pilier MM) \\
+EMA-20          & Tendance     & 20 & Non (analytique) \\
+RSI-14          & Momentum     & 15 & Oui (pilier RSI) \\
+MACD / Signal   & Momentum     & 26 / 35 & Oui (pilier MACD) \\
+MACD Histogramme & Momentum    & 35 & Non (analytique) \\
+RVOL            & Volume       & 1 & Oui (pilier Volume) \\
+OBV             & Volume       & 2 & Oui (pilier Volume) \\
+VWAP            & Prix-Volume  & 1 & Non (analytique) \\
+HV-20           & Risque       & 21 & Non (analytique) \\
 \bottomrule
 \end{tabular}
-\caption{Résumé des 7 indicateurs techniques implémentés dans le DSS}
+\caption{Résumé des indicateurs techniques calculés dans le DSS et leur usage dans le score}
 \label{tab:indicateurs-synthese}
 \end{table}
 
 \noindent
-\textbf{Observation clé :} Les indicateurs n'opèrent PAS en vase clos. Ils sont organisés en 3 \textbf{familles}, chacune avec un rôle distinct :
+\textbf{Observation clé :} Le score technique Flash Momentum est \textbf{additif sur 100 points}, structuré en \textbf{quatre piliers} (et non en moyenne pondérée de familles) :
 
 \begin{itemize}
-    \item \textbf{Famille Tendance} (SMA-20, SMA-50, EMA-20) : établit la direction générale du titre. Poids 35\% dans le score.
-    \item \textbf{Famille Momentum} (RSI-14, MACD) : valide l'intensité et la dynamique de cette direction. Poids 35\%.
-    \item \textbf{Famille Volume} (RVOL, VWAP) : confirme que la direction est portée par le volume. Poids 20\%.
-    \item \textbf{Contexte} (HV-20) : ajuste la confiance en cas de volatilité extrême. Poids 10\%, utilisé pour pénaliser la confiance, pas le score.
+    \item \textbf{Pilier Volume — 20 pts} : RVOL (pression du volume) + tendance OBV (flux).
+    \item \textbf{Pilier RSI — 25 pts} : zone de momentum (optimum entre 55 et 70).
+    \item \textbf{Pilier Moyennes mobiles — 35 pts} : position du cours (15) + alignement MM20/MM50/MM200 (15) + Golden Cross (5).
+    \item \textbf{Pilier MACD — 20 pts} : croisement MACD/Signal combiné au signe du MACD.
 \end{itemize}
+
+\noindent
+Les indicateurs EMA-20, VWAP, HV-20 et l'histogramme MACD sont \textbf{calculés et exposés} pour l'analyse, mais \textbf{n'entrent pas} dans le score Flash Momentum, conformément à la méthodologie de l'encadrant.
 
 \section{Architecture du moteur de décision : de l'indicateur au score}
 \label{sec:architecture-moteur}
 
 \noindent
-Cette section documente l'architecture précise du moteur de décision implémenté, en explicitant comment les 7 indicateurs techniques produisent progressivement un score de direction (Overall\_Score) et un indice de confiance (Confidence) à partir desquels sont générées les recommandations BUY/HOLD/SELL.
+Cette section documente l'architecture précise du moteur de décision implémenté. Le \textbf{score officiel} qui pilote les recommandations est le \textbf{score technique « Flash Momentum »}, un score \textbf{additif sur 100 points} réparti en quatre piliers. En complément, une couche analytique de \textbf{signaux individuels $\{-1, 0, +1\}$} (décrite aux sous-sections \ref{ssec:signal-individuel} et suivantes) est conservée pour l'analyse valeur-par-valeur, mais \textbf{ne pilote pas} la décision : les deux méthodologies ne sont jamais mélangées.
 
 \noindent
-\textbf{Vue d'ensemble du flux de décision :} La figure \ref{fig:architecture-pipeline} illustre le cheminement complet des données à travers le moteur, des 7 indicateurs bruts jusqu'à la recommandation finale. Ce diagramme en cascade montre comment les signaux individuels s'agrègent en scores de famille, puis en score global et confiance, lesquels alimentent la logique de décision finale.
+\textbf{Vue d'ensemble du flux de décision :} La figure \ref{fig:architecture-pipeline} illustre le cheminement des données, des indicateurs bruts jusqu'à la recommandation finale (Score Flash Momentum + Data Coverage $\rightarrow$ décision).
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.95\textwidth]{logos/pipeline-mermaid-diagram.png}
-\caption{Architecture complète du moteur de décision : flux des données de 7 indicateurs à recommandation finale}
+% [PLACEHOLDER] Diagramme d'architecture du pipeline à insérer ultérieurement.
+\framebox[0.9\textwidth]{\parbox[c][5cm][c]{0.85\textwidth}{\centering \itshape
+Placeholder --- Diagramme d'architecture du moteur de décision\\
+(Indicateurs $\rightarrow$ 4 piliers Flash Momentum $\rightarrow$ Score 0--100 $+$ Data Coverage $\rightarrow$ Décision).\\
+Image à remplacer.}}
+\caption{Architecture du moteur de décision : des indicateurs au score Flash Momentum puis à la recommandation}
 \label{fig:architecture-pipeline}
 \end{figure}
 
-\noindent
-\textbf{Flot logique résumé :}
-
-\begin{enumerate}
-    \item **7 Indicateurs** calculent chacun une valeur numérique (SMA, RSI, MACD, etc.)
-    \item **Signalisation** convertit chaque indicateur en signal discret : +1 (haussier), 0 (neutre), -1 (baissier), ou NaN (données insuffisantes)
-    \item **3 Familles** agrègent les signaux par catégorie (Tendance, Momentum, Volume), produisant un score [0-100] pour chaque famille
-    \item **Score Global** combine les 3 scores de famille via poids fixes (35-35-20), produisant un **Overall\_Score** unique [0-100]
-    \item **Confiance** évalue indépendamment la qualité des données (couverture, consensus, risque volatilité), produisant une **Confiance** [0-100%]
-    \item **Logique de Décision** compare le duo (Score, Confiance) aux seuils et génère une recommandation : **BUY / HOLD / SELL / INSUFFICIENT\_DATA**
-\end{enumerate}
+\subsection{Score technique Flash Momentum (0--100) : méthodologie officielle}
 
 \noindent
-\textbf{Points clés de ce design :}
+Le score technique est la somme de quatre piliers, dont le total maximal est de 100 points :
 
-\begin{itemize}
-    \item **Séparation Score/Confiance :** Ces deux dimensions sont complètement indépendantes. Un score fort (80) avec confiance faible (35\%) génère HOLD, pas BUY. Ce design évite les faux positifs.
-    \item **Poids fixes (35-35-20) :** Tendance et Momentum reçoivent le même poids car tous deux capitaux ; Volume est secondaire. HV-20 pénalise la confiance, pas le score.
-    \item **Gating multiples :** 3 portes doivent être passées pour agir (score extrême + confiance ≥ 60% + couverture ≥ 50\%), ce qui filtre les signaux bruyants.
-\end{itemize}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{3.2cm}cp{8cm}}
+\toprule
+\textbf{Pilier} & \textbf{Points} & \textbf{Règle} \\
+\midrule
+Volume & 20 & RVOL $>1{,}5 \rightarrow +10$ ; $0{,}5\!-\!1{,}5 \rightarrow +5$ ; $<0{,}5 \rightarrow 0$. \newline Tendance OBV (10 j) : hausse $\rightarrow +10$ ; neutre $\rightarrow +5$ ; baisse $\rightarrow 0$. \\
+RSI & 25 & $55\!\le\!RSI\!\le\!70 \rightarrow 25$ ; $45\!\le\!RSI\!<\!55 \rightarrow 15$ ; $RSI>70 \rightarrow 10$ ; $RSI<30 \rightarrow 0$. \\
+Moyennes mobiles & 35 & Position du cours (15) $+$ alignement MM20/MM50/MM200 (15) $+$ Golden Cross MM50/MM200 récent (5). \\
+MACD & 20 & MACD$>$Signal \& MACD$>0 \rightarrow 20$ ; $>$Signal \& $<0 \rightarrow 12$ ; $<$Signal \& $>0 \rightarrow 5$ ; sinon $0$. \\
+\bottomrule
+\end{tabular}
+\caption{Les quatre piliers du score technique Flash Momentum (total = 100 points)}
+\label{tab:flash-pillars}
+\end{table}
 
-\subsection{Étape 1 : Signalisation individuelle (signal per indicator)}
+\noindent
+\textbf{Dégradation gracieuse :} si la MM200 n'est pas calculable (historique $<$ 200 séances), les paliers de position et d'alignement sont dégradés et la couverture des données diminue --- le titre n'est jamais rejeté pour ce seul motif.
 
+\noindent
+\textbf{Classification du score :}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{cl}
+\toprule
+\textbf{Score} & \textbf{Classe} \\
+\midrule
+80--100 & Très Fort \\
+60--79  & Modéré à Positif \\
+40--59  & Neutre \\
+0--39   & Faible / Baissier \\
+\bottomrule
+\end{tabular}
+\caption{Grille de classification du score technique}
+\label{tab:flash-classification}
+\end{table}
+
+\noindent
+\textbf{Règle de décision (officielle) :} $\text{Score} \ge 60 \rightarrow$ BUY ; $\text{Score} < 40 \rightarrow$ SELL ; sinon HOLD. Une couverture de données insuffisante ($<50\%$) donne INSUFFICIENT\_DATA (jamais un SELL automatique). Le détail est donné en section \ref{sec:blueprint}.
+
+\vspace{0.3cm}
+\noindent
+\textbf{Note :} Les sous-sections suivantes (\ref{ssec:signal-individuel} à la confiance) décrivent la \textbf{couche analytique complémentaire} $\{-1,0,+1\}$ (signaux individuels, scores de famille, \texttt{Overall\_Score}, \texttt{Confidence}). Cette couche sert à l'interprétation valeur-par-valeur et au diagnostic ; elle \textbf{ne remplace pas} le score Flash Momentum qui, seul, pilote la décision.
+
+\subsection{Couche analytique --- Étape 1 : Signalisation individuelle}
+\label{ssec:signal-individuel}
+
+\noindent
+\textit{Les étapes 1 à 4 ci-dessous décrivent la couche analytique complémentaire $\{-1,0,+1\}$, utile pour l'interprétation valeur-par-valeur. Elles ne constituent pas le score officiel (Flash Momentum), présenté plus haut.}
+
+\vspace{0.2cm}
 \noindent
 Chaque indicateur, pour chaque date et chaque titre, génère un \textbf{signal individuel} discret à trois valeurs :
 
@@ -1064,17 +1109,17 @@ Le pipeline traite les données en 5 étapes strictement séquentielles :
     
     \item \textbf{Filtrage dynamique de l'univers.} Sur la base de la composition d'indice téléchargée, les seuils de filtrage sont recalculés. Trois portes d'admission :
         \begin{itemize}
-            \item Porte 1 : Le titre appartient-il à l'indice sélectionné ? (MASI, MADEX, etc.)
-            \item Porte 2 : Facteur flottant ≥ 0.20 ? (au moins 20\% des titres librement négociables)
-            \item Porte 3 : Capitalisation flottante ≥ p25 de l'indice ? (au-delà du 1er quartile)
+            \item Porte 1 : Le titre appartient-il à l'indice sélectionné ? (jointure par code ISIN normalisé)
+            \item Porte 2 : \textbf{Poids flottant} (pondération du titre dans l'indice) $\ge$ seuil ? (seuil configurable dans l'interface, défaut 0)
+            \item Porte 3 : Capitalisation flottante $\ge$ percentile de l'indice (p25 par défaut, recalculé dynamiquement) ?
         \end{itemize}
         Les titres qui passent les 3 portes constituent l'\textit{univers investable}. Les autres sont marqués EXCLUDED avec la raison.
     
     \item \textbf{Calcul des indicateurs.} Pour chaque titre de l'univers investable, les 10 indicateurs sont calculés sur l'intégralité de l'historique disponible. Chaque indicateur reçoit un statut VALID ou INSUFFICIENT\_DATA selon le nombre minimum d'observations requis. Les indicateurs sont stockés comme colonnes de la table.
     
-    \item \textbf{Signalisation et scoring.} Les signaux individuels (+1/0/-1) sont dérivés des indicateurs selon les règles du tableau \ref{tab:signal-rules}. Les scores de famille, le score global et la confiance sont calculés selon les formules des sections \ref{sec:architecture-moteur}. Les trois scores sont stockés comme colonnes.
+    \item \textbf{Scoring.} Le \textbf{score technique Flash Momentum} (0--100) est calculé en sommant les quatre piliers (Volume, RSI, Moyennes mobiles, MACD) selon le tableau \ref{tab:flash-pillars}, et la \textbf{Data Coverage} est évaluée indépendamment. En parallèle, la couche analytique $\{-1,0,+1\}$ (signaux individuels, scores de famille) est calculée pour l'interprétation. Ces valeurs sont stockées comme colonnes.
     
-    \item \textbf{Génération des recommandations.} Le triplet (Overall\_Score, Confidence, Data\_Coverage) est comparé aux seuils de décision (Tableau \ref{tab:decision-thresholds}). Une recommandation unique (BUY / HOLD / SELL / INSUFFICIENT\_DATA) est générée pour chaque titre. Les recommandations sont agrégées au niveau du portefeuille (nombre total de BUY, HOLD, SELL, INSUFFICIENT).
+    \item \textbf{Génération des recommandations.} Le couple (\texttt{Technical\_Score}, \texttt{Data\_Coverage}) est comparé aux seuils de décision (Tableau \ref{tab:decision-thresholds}). Une recommandation unique (BUY / HOLD / SELL / INSUFFICIENT\_DATA) est générée pour chaque titre, puis agrégée au niveau du portefeuille (nombre total de BUY, HOLD, SELL, INSUFFICIENT).
 \end{enumerate}
 
 \subsection{Seuils de décision : portes vers BUY / HOLD / SELL}
@@ -1085,17 +1130,17 @@ Les décisions sont générées selon une \textbf{logique de portes successives}
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{p{3cm}cccl}
+\begin{tabular}{p{5cm}cl}
 \toprule
-\textbf{Seuil} & \textbf{Score} & \textbf{Confiance} & \textbf{Coverage} & \textbf{Décision} \\
+\textbf{Condition} & \textbf{Score technique} & \textbf{Décision} \\
 \midrule
-Coverage < 50\%        & — & — & < 50\% & INSUFFICIENT\_DATA \\
-Score ≥ 60 ET Conf ≥ 60\% & ≥ 60 & ≥ 60 & — & BUY \\
-Score ≤ 40 ET Conf ≥ 60\% & ≤ 40 & ≥ 60 & — & SELL \\
-Tous autres cas        & 40–60 & — & — & HOLD \\
+Data Coverage $<$ 50\%   & --- & INSUFFICIENT\_DATA \\
+Score $\ge$ 60           & $\ge$ 60 & BUY \\
+Score $<$ 40             & $<$ 40 & SELL \\
+Zone neutre (40--59)     & 40--59 & HOLD \\
 \bottomrule
 \end{tabular}
-\caption{Seuils de décision (configuration de base)}
+\caption{Seuils de décision pilotés par le score technique Flash Momentum}
 \label{tab:decision-thresholds}
 \end{table}
 
@@ -1103,11 +1148,11 @@ Tous autres cas        & 40–60 & — & — & HOLD \\
 En pseudo-code :
 
 \begin{minted}{python}
-if coverage < 0.50:
-    decision = 'INSUFFICIENT_DATA'
-elif score >= 60 and confidence >= 60:
+if data_coverage < 0.50:
+    decision = 'INSUFFICIENT_DATA'   # jamais transformé en SELL
+elif technical_score >= 60:
     decision = 'BUY'
-elif score <= 40 and confidence >= 60:
+elif technical_score < 40:
     decision = 'SELL'
 else:
     decision = 'HOLD'
@@ -1116,9 +1161,9 @@ else:
 \noindent
 \textbf{Observations clés :}
 \begin{itemize}
-    \item \textbf{Gating par couverture de données :} Si moins de 50\% des 7 indicateurs obligatoires sont valides, aucune décision n'est produite, indépendamment du score/confiance calculés. Cette porte existe pour éviter de décider sur des données très incomplètes.
-    \item \textbf{Confiance comme seuil d'action :} Pour générer un BUY ou SELL, la confiance doit être ≥ 60\%. Cela signifie qu'un Score = 75 seul (sans confiance suffisante) génère HOLD, pas BUY. C'est un design intentionnel : on n'agit que sur des signaux de haute qualité.
-    \item \textbf{Asymétrie : BUY et SELL ont les mêmes exigences de confiance.} Les deux exigent Confiance ≥ 60\%. Cela reflète un choix métier : il faut autant de prudence pour acheter que pour vendre.
+    \item \textbf{Le score technique pilote la décision :} c'est le score Flash Momentum (0--100) qui détermine BUY/HOLD/SELL, via les seuils 60 et 40 (alignés sur la grille de classification).
+    \item \textbf{Gating par couverture de données :} si moins de 50\% des inputs requis du score sont valides, aucune décision n'est produite (INSUFFICIENT\_DATA), quel que soit le score. Un manque de données ne devient \textbf{jamais} un SELL automatique.
+    \item \textbf{Data Coverage indépendant du score :} la couverture mesure la qualité/complétude des données, distincte de la force du signal. C'est le garde-fou qui protège contre les décisions sur données incomplètes.
 \end{itemize}
 
 \subsection{Résumé à la date la plus récente}

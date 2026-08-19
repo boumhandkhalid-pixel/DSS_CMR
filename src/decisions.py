@@ -1,7 +1,19 @@
 """
 Investment decision generation (BUY/HOLD/SELL).
 
-Migrated from Notebook 11.
+La décision est pilotée par le SCORE TECHNIQUE « Flash Momentum » (0–100),
+source de vérité métier (voir src/scoring_flash.py et FLASH_MOMENTUM_CONFIG).
+
+Principes (méthodologie encadrant) :
+    - Technical Score → pilote BUY / HOLD / SELL via une grille configurable.
+    - Data Coverage est une dimension INDÉPENDANTE : une couverture insuffisante
+      produit INSUFFICIENT_DATA, JAMAIS un SELL automatique.
+
+Mapping par défaut (FLASH_DECISION_THRESHOLDS, configurable) :
+    score ≥ buy_min_score (60)  → BUY
+    score < sell_max_score (40) → SELL
+    sinon (zone Neutre 40–59)   → HOLD
+    couverture < min_coverage   → INSUFFICIENT_DATA
 """
 
 from __future__ import annotations
@@ -13,142 +25,141 @@ from typing import Dict, Tuple
 
 def make_decision(
     row: pd.Series,
-    thresholds: Dict,
-    min_coverage: float
+    flash_thresholds: Dict,
+    min_coverage: float,
 ) -> Tuple[str, float]:
     """
-    Make investment decision for one row.
-    
-    NEW: Uses Coverage Graceful approach with family coverage.
-    
+    Décision d'investissement pour une ligne, pilotée par le Technical Score.
+
     Args:
-        row: DataFrame row with Overall_Score, Confidence, and Coverage columns
-        thresholds: DECISION_THRESHOLDS from config
-        min_coverage: MIN_COVERAGE_FOR_DECISION from config
-    
+        row: ligne avec 'Technical_Score' et 'Flash_Coverage'
+        flash_thresholds: FLASH_DECISION_THRESHOLDS (buy_min_score, sell_max_score)
+        min_coverage: MIN_COVERAGE_FOR_DECISION (seuil de couverture)
+
     Returns:
-        (decision, coverage) tuple
+        (decision, coverage)
     """
-    REQUIRED_IND = ['SMA_20', 'SMA_50', 'EMA_20', 'RSI_14', 'MACD', 'RVOL', 'VWAP']
-    
-    score = row.get('Overall_Score', np.nan)
-    conf = row.get('Confidence', np.nan)
-    
-    # Calculate global data coverage
-    valid_count = sum(
-        1 for ind in REQUIRED_IND
-        if row.get(f'Valid_{ind}', 'INSUFFICIENT_DATA') == 'VALID'
-    )
-    overall_coverage = valid_count / len(REQUIRED_IND)
-    
-    # Get family coverage (NEW)
-    trend_cov = row.get('Trend_Coverage', 0.0)
-    momentum_cov = row.get('Momentum_Coverage', 0.0)
-    volume_cov = row.get('Volume_Coverage', 0.0)
-    
-    # Gate 1: Overall coverage < 50% → INSUFFICIENT
-    if overall_coverage < min_coverage:
-        return 'INSUFFICIENT_DATA', overall_coverage
-    
-    # Gate 2: At least ONE family must have >= 50% coverage
-    # (Can't make decision if ALL families are incomplete)
-    if trend_cov < 0.5 and momentum_cov < 0.5 and volume_cov < 0.5:
-        return 'INSUFFICIENT_DATA', overall_coverage
-    
-    # Gate 3: Score and confidence must be computable
-    if pd.isna(score) or pd.isna(conf):
-        return 'INSUFFICIENT_DATA', overall_coverage
-    
-    # Decision rules
-    buy_t = thresholds['buy']
-    sell_t = thresholds['sell']
-    
-    if score >= buy_t['min_score'] and conf >= buy_t['min_confidence']:
-        return 'BUY', overall_coverage
-    
-    if score <= sell_t['max_score'] and conf >= sell_t['min_confidence']:
-        return 'SELL', overall_coverage
-    
-    return 'HOLD', overall_coverage
+    score = row.get('Technical_Score', np.nan)
+    coverage = row.get('Flash_Coverage', np.nan)
+
+    if pd.isna(coverage):
+        coverage = 0.0
+
+    # Gate 1 : couverture insuffisante → INSUFFICIENT_DATA (jamais SELL)
+    if coverage < min_coverage:
+        return 'INSUFFICIENT_DATA', coverage
+
+    # Gate 2 : score non calculable → INSUFFICIENT_DATA
+    if pd.isna(score):
+        return 'INSUFFICIENT_DATA', coverage
+
+    # Décision pilotée par le Technical Score
+    if score >= flash_thresholds['buy_min_score']:
+        return 'BUY', coverage
+    if score < flash_thresholds['sell_max_score']:
+        return 'SELL', coverage
+    return 'HOLD', coverage
 
 
 def make_investment_decisions(
     df: pd.DataFrame,
-    thresholds: Dict,
-    min_coverage: float
+    flash_thresholds: Dict,
+    min_coverage: float,
 ) -> pd.DataFrame:
     """
-    Generate investment decisions for all rows.
-    
+    Génère les décisions BUY/HOLD/SELL pour toutes les lignes.
+
     Args:
-        df: DataFrame with signals and scores
-        thresholds: DECISION_THRESHOLDS from config
-        min_coverage: MIN_COVERAGE_FOR_DECISION from config
-    
+        df: DataFrame avec Technical_Score et Flash_Coverage
+        flash_thresholds: FLASH_DECISION_THRESHOLDS
+        min_coverage: MIN_COVERAGE_FOR_DECISION
+
     Returns:
-        DataFrame with Decision and Data_Coverage columns
+        DataFrame avec colonnes Decision et Data_Coverage
     """
     results = df.apply(
         lambda r: pd.Series(
-            make_decision(r, thresholds, min_coverage),
+            make_decision(r, flash_thresholds, min_coverage),
             index=['Decision', 'Data_Coverage']
         ),
         axis=1
     )
-    
+
     df['Decision'] = results['Decision']
     df['Data_Coverage'] = results['Data_Coverage']
-    
+
     return df
 
 
 def generate_summary(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Generate per-company decision summary (latest decision per company).
-    
+    Résumé par société (dernière décision exploitable par société).
+
+    Expose le Technical Score officiel et sa classification, en conservant
+    Overall_Score/Confidence pour la vue analytique.
+
     Args:
-        df: DataFrame with decisions
-    
+        df: DataFrame avec décisions
+
     Returns:
-        Summary DataFrame with one row per company
+        Résumé (une ligne par société)
     """
     rows_out = []
-    
+
+    from config.methodology import FLASH_MOMENTUM_CONFIG
+    cov_inputs = FLASH_MOMENTUM_CONFIG['coverage_inputs']
+    n_total_ind = len(cov_inputs)
+
+    def _r1(v):
+        return round(float(v), 1) if pd.notna(v) else np.nan
+
     for isin, grp in df.groupby('CODE_ISIN'):
         grp_s = grp.sort_values('Date')
-        
-        # Prefer rows with valid decisions
+
+        # Préférer les lignes avec décision exploitable
         valid = grp_s[grp_s['Decision'] != 'INSUFFICIENT_DATA']
         latest = valid.tail(1) if len(valid) > 0 else grp_s.tail(1)
-        
+
         if len(latest) == 0:
             continue
-        
+
         r = latest.iloc[0]
-        
-        # Build signal summary
-        sig_parts = []
-        for sig_col, label in [
-            ('Sig_EMA_20', 'EMA_20'),
-            ('Sig_RSI_14', 'RSI_14'),
-            ('Sig_RVOL', 'RVOL'),
-            ('Sig_VWAP', 'VWAP')
-        ]:
-            v = r.get(sig_col, np.nan)
-            if pd.notna(v):
-                arrow = '↑' if v > 0 else '↓' if v < 0 else '='
-                sig_parts.append(f'{label}{arrow}')
-        
+
+        # Indicateurs du score Flash Momentum calculés (non-NaN) sur la ligne retenue
+        n_computed = sum(1 for c in cov_inputs if c in r.index and pd.notna(r.get(c)))
+
+        # Historique de cours de la société (pour dates de couverture)
+        price_rows = grp_s[grp_s['Cours'].notna()] if 'Cours' in grp_s.columns else grp_s.iloc[0:0]
+        first_date = price_rows['Date'].min() if len(price_rows) else pd.NaT
+        last_date = price_rows['Date'].max() if len(price_rows) else pd.NaT
+        n_sessions = int(len(price_rows))
+
         rows_out.append({
             'CODE_ISIN': isin,
             'Company': r['Company'],
             'Date': r['Date'].date() if pd.notna(r['Date']) else 'N/A',
             'Cours': round(r['Cours'], 2) if pd.notna(r['Cours']) else np.nan,
-            'Overall_Score': round(r['Overall_Score'], 1) if pd.notna(r['Overall_Score']) else np.nan,
-            'Confidence': r['Confidence'],
+            # Score technique officiel (Flash Momentum)
+            'Technical_Score': _r1(r.get('Technical_Score', np.nan)),
+            'Score_Class': r.get('Score_Class', 'N/A'),
+            'Score_Symbol': r.get('Score_Symbol', ''),
+            # Détail des points par pilier Flash Momentum
+            'Flash_Vol_Score': _r1(r.get('Flash_Vol_Score', np.nan)),
+            'Flash_RSI_Score': _r1(r.get('Flash_RSI_Score', np.nan)),
+            'Flash_MM_Score': _r1(r.get('Flash_MM_Score', np.nan)),
+            'Flash_MACD_Score': _r1(r.get('Flash_MACD_Score', np.nan)),
+            # Traçabilité OBV / Golden Cross
+            'OBV_Trend': r.get('OBV_Trend', None),
+            'Golden_Cross_Recent': bool(r.get('Golden_Cross_Recent', False)),
+            # Couverture des données
             'Decision': r['Decision'],
             'Data_Coverage': f"{r['Data_Coverage'] * 100:.0f}%",
-            'Signals': ' | '.join(sig_parts) if sig_parts else 'no valid signals',
+            'Indicators_Computed': n_computed,
+            'Indicators_Total': n_total_ind,
+            # Fenêtre historique
+            'First_Price_Date': first_date.date() if pd.notna(first_date) else 'N/A',
+            'Last_Price_Date': last_date.date() if pd.notna(last_date) else 'N/A',
+            'N_Sessions': n_sessions,
         })
-    
+
     return pd.DataFrame(rows_out)

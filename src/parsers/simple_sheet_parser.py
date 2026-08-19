@@ -1,6 +1,8 @@
 from typing import Optional
 import pandas as pd
 
+from src.parsers.isin_utils import normalize_isin, looks_like_isin
+
 
 def _find_row_with_value(df: pd.DataFrame, value_substr: str) -> Optional[int]:
     value_substr = value_substr.lower()
@@ -46,14 +48,30 @@ def parse_simple_sheet(path: str, sheet_name: str) -> pd.DataFrame:
         # as fallback, assume data starts at lib_row + 1
         data_start = lib_row + 1
 
-    # Build mapping for company columns
+    # Build mapping for company columns.
+    # Itère sur TOUTES les colonnes (une par société) et normalise l'ISIN.
     companies = []  # list of tuples (col_idx, code_isin, company_name)
     for col in range(1, raw.shape[1]):
-        code = raw.iat[code_row, col]
+        raw_code = raw.iat[code_row, col]
         name = raw.iat[lib_row, col]
-        if pd.isna(code) and pd.isna(name):
+
+        # ISIN propre depuis la ligne « CODE ISIN » (gère le bruit ',XX,CAS')
+        code = normalize_isin(raw_code) if pd.notna(raw_code) else ''
+
+        # Repli : si la cellule CODE ISIN est vide/invalide, chercher un ISIN
+        # dans les autres lignes d'en-tête de cette colonne (ex. ligne 'MA...,XX,CAS').
+        if not looks_like_isin(code):
+            for r in range(0, min(data_start, len(raw))):
+                candidate = normalize_isin(raw.iat[r, col]) if pd.notna(raw.iat[r, col]) else ''
+                if looks_like_isin(candidate):
+                    code = candidate
+                    break
+
+        # Ignorer les colonnes totalement vides
+        if not code and pd.isna(name):
             continue
-        companies.append((col, str(code).strip() if pd.notna(code) else '', str(name).strip() if pd.notna(name) else ''))
+
+        companies.append((col, code, str(name).strip() if pd.notna(name) else ''))
 
     # Normalize variable name using semantic patterns
     canonical_variable = normalize_sheet_name(sheet_name)

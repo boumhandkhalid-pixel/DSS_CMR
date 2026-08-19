@@ -64,8 +64,8 @@ def compute_indicators_for_company(
     g = group_df.sort_values('Date').copy()
     
     # Initialize indicator columns
-    IND = ['SMA_20', 'SMA_50', 'EMA_20', 'RSI_14', 'MACD', 'MACD_Signal', 
-           'MACD_Histogram', 'RVOL', 'VWAP', 'HV_20']
+    IND = ['SMA_20', 'SMA_50', 'SMA_200', 'EMA_20', 'RSI_14', 'MACD', 'MACD_Signal',
+           'MACD_Histogram', 'RVOL', 'VWAP', 'HV_20', 'OBV']
     for c in IND:
         g[c] = np.nan
     
@@ -91,6 +91,13 @@ def compute_indicators_for_company(
         g.loc[mask, 'SMA_50'] = pr.rolling(
             params['sma_long'],
             min_periods=params['sma_long']
+        ).mean().values
+    
+    # SMA_200 (strict: need full window; graceful → NaN if history insufficient)
+    if n >= min_obs['SMA_200']:
+        g.loc[mask, 'SMA_200'] = pr.rolling(
+            params['sma_very_long'],
+            min_periods=params['sma_very_long']
         ).mean().values
     
     # EMA_20 (degrades gracefully from obs 1)
@@ -137,6 +144,18 @@ def compute_indicators_for_company(
         cum_vol = g['Volume MC'].where(both, 0).cumsum()
         g['VWAP'] = (cum_pv / cum_vol.replace(0, np.nan)).where(cum_vol > 0)
     
+    # OBV (On-Balance Volume) — cumulative money flow proxy
+    # OBV_t = OBV_{t-1} + Volume_t if Cours_t > Cours_{t-1}
+    #                    - Volume_t if Cours_t < Cours_{t-1}
+    #                    +      0   if Cours_t == Cours_{t-1}
+    # Computed on the clean (non-NaN) price series; missing volume contributes 0 flow.
+    if n >= min_obs['OBV']:
+        vol_aligned = g.loc[mask, 'Volume MC'].astype(float)
+        direction = np.sign(pr.diff())
+        direction.iloc[0] = 0.0  # no prior close on first observation
+        obv_step = direction * vol_aligned.fillna(0.0)
+        g.loc[mask, 'OBV'] = obv_step.cumsum().values
+    
     # ─── Volatility Indicators ───
     
     # HV_20 (annualized historical volatility)
@@ -161,8 +180,8 @@ def add_validity_status(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with Valid_{indicator} columns added
     """
-    IND_COLS = ['SMA_20', 'SMA_50', 'EMA_20', 'RSI_14', 'MACD', 'MACD_Signal',
-                'MACD_Histogram', 'RVOL', 'VWAP', 'HV_20']
+    IND_COLS = ['SMA_20', 'SMA_50', 'SMA_200', 'EMA_20', 'RSI_14', 'MACD', 'MACD_Signal',
+                'MACD_Histogram', 'RVOL', 'VWAP', 'HV_20', 'OBV']
     
     for ind in IND_COLS:
         df[f'Valid_{ind}'] = df[ind].notna().map(

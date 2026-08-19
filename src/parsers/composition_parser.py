@@ -26,6 +26,8 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
+from src.parsers.isin_utils import normalize_isin
+
 
 def normalize_index_name(name: str) -> str:
     """
@@ -58,15 +60,15 @@ def detect_column_mapping(df_columns: List[str]) -> Dict[str, str]:
     {'Indice': 'Indice', 'CODE_ISIN': 'Code ISIN', 'FF': 'Facteur Flottant', ...}
     """
     mapping = {}
-    
+
     # Normaliser les colonnes pour comparaison (fuzzy matching)
     def normalize(s):
         return str(s).strip().lower().replace(' ', '').replace('_', '').replace('-', '')
-    
-    normalized_cols = {normalize(col): col for col in df_columns}
-    
-    # Patterns pour chaque colonne critique
-    # Ordre d'importance : plus spécifique en premier
+
+    # Conserver l'ordre des colonnes du fichier
+    norm_by_col = [(col, normalize(col)) for col in df_columns]
+
+    # Patterns pour chaque colonne critique (ordre = priorité)
     patterns = {
         'Indice': ['indice'],
         'CODE_ISIN': ['codeisin', 'isin'],
@@ -77,18 +79,35 @@ def detect_column_mapping(df_columns: List[str]) -> Dict[str, str]:
         'Capping_Factor': ['facteurplafonnement', 'facteur2', 'cappingfactor', 'plafonnement'],
         'Nb_Titres': ['nombredetitres', 'nbtitres', 'titres', 'nombre'],
         'Date': ['seance', 'date'],
-        'Cours': ['cours', 'price', 'close', 'dernier']
+        'Cours': ['cours', 'price', 'close', 'dernier'],
     }
-    
+
+    used_sources = set()  # évite qu'une même colonne source alimente 2 canoniques
+
+    # Passe 1 — correspondance EXACTE (normalisée) : la plus fiable.
+    # Empêche p.ex. 'Code Indice' (codeindice) de capturer le canonique 'Indice'.
     for canonical, pattern_list in patterns.items():
-        for pattern in pattern_list:
-            for norm_col, actual_col in normalized_cols.items():
-                if pattern in norm_col:
-                    mapping[canonical] = actual_col
-                    break
-            if canonical in mapping:
+        for col, norm in norm_by_col:
+            if col in used_sources:
+                continue
+            if norm in pattern_list:
+                mapping[canonical] = col
+                used_sources.add(col)
                 break
-    
+
+    # Passe 2 — correspondance par inclusion (contains), pour les canoniques restants,
+    # sans réutiliser une colonne déjà affectée.
+    for canonical, pattern_list in patterns.items():
+        if canonical in mapping:
+            continue
+        for col, norm in norm_by_col:
+            if col in used_sources:
+                continue
+            if any(pattern in norm for pattern in pattern_list):
+                mapping[canonical] = col
+                used_sources.add(col)
+                break
+
     return mapping
 
 
@@ -250,9 +269,9 @@ def parse_composition_file(
             if 'Indice' in df_clean.columns:
                 df_clean['Indice'] = df_clean['Indice'].str.strip()
             
-            # Normaliser CODE_ISIN (strip espaces)
+            # Normaliser CODE_ISIN (isole le code propre pour une jointure fiable)
             if 'CODE_ISIN' in df_clean.columns:
-                df_clean['CODE_ISIN'] = df_clean['CODE_ISIN'].str.strip()
+                df_clean['CODE_ISIN'] = df_clean['CODE_ISIN'].map(normalize_isin)
             
             all_dfs.append(df_clean)
             

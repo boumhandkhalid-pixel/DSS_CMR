@@ -421,6 +421,54 @@ def validate_dataset(df: pd.DataFrame, verbose: bool = False) -> Tuple[bool, Dic
     return all_passed, report
 
 
+def drop_empty_companies(
+    df: pd.DataFrame,
+    price_col: str = 'Cours',
+    volume_col: str = 'Volume MC',
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Nettoyage pré-analyse : supprime les sociétés dont l'historique est vide.
+
+    Une société est écartée si TOUTES ses valeurs de cours sont nulles/manquantes
+    ET (si la colonne existe) toutes ses valeurs de volume le sont aussi — c'est-à-dire
+    une colonne totalement vide dans le fichier marché (aucune donnée exploitable).
+
+    On considère une valeur comme « vide » si elle est NaN ou égale à 0.
+
+    Args:
+        df: dataset marché unifié (colonnes Date, CODE_ISIN, price_col, volume_col)
+        price_col: colonne de cours (défaut 'Cours')
+        volume_col: colonne de volume (défaut 'Volume MC')
+
+    Returns:
+        (df_nettoyé, rapport)
+    """
+    report = {
+        'companies_before': df['CODE_ISIN'].nunique(),
+        'removed_companies': [],
+    }
+
+    def _has_data(series: pd.Series) -> bool:
+        s = pd.to_numeric(series, errors='coerce')
+        return bool((s.notna() & (s != 0)).any())
+
+    valid_isins = []
+    for isin, g in df.groupby('CODE_ISIN'):
+        price_ok = _has_data(g[price_col]) if price_col in g.columns else False
+        volume_ok = _has_data(g[volume_col]) if volume_col in g.columns else False
+        # On garde la société si elle a au moins des cours exploitables
+        if price_ok or volume_ok:
+            valid_isins.append(isin)
+        else:
+            company = g['Company'].iloc[0] if 'Company' in g.columns and len(g) else str(isin)
+            report['removed_companies'].append({'CODE_ISIN': isin, 'Company': company})
+
+    cleaned = df[df['CODE_ISIN'].isin(valid_isins)].copy().reset_index(drop=True)
+    report['companies_after'] = cleaned['CODE_ISIN'].nunique()
+    report['companies_removed'] = len(report['removed_companies'])
+    return cleaned, report
+
+
 def filter_companies_by_temporal_quality(
     df: pd.DataFrame,
     max_gap_days: int = 7,
@@ -473,79 +521,93 @@ def filter_companies_by_temporal_quality(
     
     Returns:
         (filtered_df, removal_report)
+
+    NOUVELLE STRATÉGIE (v2) — Troncature au segment continu récent
+    --------------------------------------------------------------
+    Un vieux trou dans l'historique (ex. suspension de cotation il y a 3 ans) ne
+    doit PAS faire perdre toute la société : les indicateurs récents (SMA, RSI,
+    MACD à la dernière séance) n'en dépendent pas.
+
+    Pour chaque société, on conserve UNIQUEMENT son SEGMENT CONTINU LE PLUS RÉCENT
+    (aucun écart > max_gap_days à l'intérieur). La société n'est retirée que si elle
+    n'a AUCUN cours valide. Ainsi :
+      - un titre avec un trou ancien est conservé (on garde tout ce qui suit le trou) ;
+      - la continuité nécessaire au calcul des indicateurs est garantie ;
+      - aucune société valide n'est perdue pour une anomalie isolée.
     """
     removal_report = {
         'total_rows_before': len(df),
         'total_companies_before': df['CODE_ISIN'].nunique(),
         'removed_companies': [],
+        'trimmed_companies': [],
         'removed_rows': 0,
         'max_gap_days': max_gap_days,
         'key_column': key_column,
-        'filter_type': 'temporal_quality_only',
+        'filter_type': 'recent_continuous_segment',
     }
 
-    valid_isins = []
+    kept_frames = []
 
     for isin in sorted(df['CODE_ISIN'].unique()):
         company_df = df[df['CODE_ISIN'] == isin].sort_values('Date')
         company_name = company_df['Company'].iloc[0]
         total_rows = len(company_df)
 
-        # Dates where key_column is non-null, sorted ascending
-        valid_dates = company_df[company_df[key_column].notna()]['Date'].sort_values()
+        # Dates où key_column est non-nul, triées
+        valid = company_df[company_df[key_column].notna()].sort_values('Date')
+        valid_dates = valid['Date'].tolist()
         n_valid = len(valid_dates)
 
         if n_valid == 0:
-            # No valid prices at all → reject
+            # Aucun cours valide → seul cas de rejet total
             removal_report['removed_companies'].append({
                 'CODE_ISIN': isin,
                 'Company': company_name,
                 'Total_Rows': total_rows,
                 'Valid_Obs': 0,
-                'Max_Gap': None,
-                'Reason': f'No valid {key_column} observations'
+                'Reason': f'Aucune observation {key_column} valide',
             })
             removal_report['removed_rows'] += total_rows
             continue
 
-        # Check for large gaps
-        has_large_gap = False
+        # Déterminer le début du segment continu LE PLUS RÉCENT
+        # (on repart du segment dès qu'un écart > max_gap_days est rencontré)
+        seg_start_date = valid_dates[0]
         max_gap = 0
-        
-        if n_valid > 1:
-            for i in range(1, n_valid):
-                gap = (valid_dates.iloc[i] - valid_dates.iloc[i - 1]).days
-                max_gap = max(max_gap, gap)
-                if gap > max_gap_days:
-                    has_large_gap = True
-                    break
+        for i in range(1, n_valid):
+            gap = (valid_dates[i] - valid_dates[i - 1]).days
+            max_gap = max(max_gap, gap)
+            if gap > max_gap_days:
+                seg_start_date = valid_dates[i]  # nouveau segment récent
 
-        if has_large_gap:
-            # Large gap found → reject
-            removal_report['removed_companies'].append({
+        # Conserver les lignes à partir du début du segment récent
+        kept = company_df[company_df['Date'] >= seg_start_date]
+        kept_frames.append(kept)
+
+        if seg_start_date != valid_dates[0]:
+            # La société a été tronquée (un trou existait avant le segment récent)
+            removal_report['trimmed_companies'].append({
                 'CODE_ISIN': isin,
                 'Company': company_name,
-                'Total_Rows': total_rows,
-                'Valid_Obs': n_valid,
                 'Max_Gap': max_gap,
-                'Reason': f'Gap between observations = {max_gap} days (max allowed: {max_gap_days})'
+                'Segment_Start': str(pd.Timestamp(seg_start_date).date()),
+                'Rows_Kept': len(kept),
+                'Rows_Dropped': total_rows - len(kept),
+                'Reason': f'Tronqué au segment continu récent (écart max {max_gap} j > {max_gap_days} j)',
             })
-            removal_report['removed_rows'] += total_rows
-        else:
-            # Temporal quality OK → keep company
-            valid_isins.append(isin)
+            removal_report['removed_rows'] += (total_rows - len(kept))
 
-    filtered_df = (
-        df[df['CODE_ISIN'].isin(valid_isins)]
-        .copy()
-        .reset_index(drop=True)
-    )
+    if kept_frames:
+        filtered_df = pd.concat(kept_frames).reset_index(drop=True)
+    else:
+        filtered_df = df.iloc[0:0].copy()
 
     removal_report.update({
         'total_rows_after': len(filtered_df),
         'total_companies_after': filtered_df['CODE_ISIN'].nunique(),
-        'companies_retained': len(valid_isins),
+        'companies_retained': filtered_df['CODE_ISIN'].nunique(),
         'companies_removed': len(removal_report['removed_companies']),
+        'companies_trimmed': len(removal_report['trimmed_companies']),
         'rows_retained': len(filtered_df),
         'rows_removed': removal_report['removed_rows'],
     })
